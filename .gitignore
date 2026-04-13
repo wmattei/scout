@@ -1,0 +1,16 @@
+# Build artifacts
+/bin/
+/dist/
+
+# Go
+*.test
+*.out
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local cache (for ad-hoc runs against a scratch HOME)
+/tmp/
