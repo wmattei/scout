@@ -11,12 +11,13 @@ import (
 
 // computeResults returns the fuzzy match results for a query, or an empty
 // slice if the query is empty (so the TUI shows the "start typing" hint
-// instead of every cached resource).
-func computeResults(query string, mem *index.Memory, height int) []search.Result {
+// instead of every cached resource). The list is capped at
+// MaxDisplayedResults so the TUI stays snappy even against a huge cache.
+func computeResults(query string, mem *index.Memory) []search.Result {
 	if query == "" {
 		return nil
 	}
-	return search.Fuzzy(query, mem.All(), maxInt(1, height-3))
+	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
 }
 
 // Custom messages emitted by commands.
@@ -64,7 +65,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// query shows no results (the TUI renders a "start typing" hint
 		// instead) so the user isn't dumped into a sea of everything on
 		// launch or after clearing the input.
-		m.results = computeResults(m.input.Value(), m.memory, m.height)
+		m.results = computeResults(m.input.Value(), m.memory)
 		if m.selected >= len(m.results) {
 			m.selected = len(m.results) - 1
 		}
@@ -77,7 +78,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The SWR refresh wrote new data into m.memory. Recompute the
 		// current result list against the updated snapshot. No-op when the
 		// query is empty (the empty-state hint handles that case in View).
-		m.results = computeResults(m.input.Value(), m.memory, m.height)
+		m.results = computeResults(m.input.Value(), m.memory)
 		if m.selected >= len(m.results) {
 			m.selected = len(m.results) - 1
 		}
@@ -104,9 +105,3 @@ func spinTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return msgSpinTick{} })
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
