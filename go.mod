@@ -5,6 +5,7 @@ go 1.25.3
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.78.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10
 	github.com/aws/smithy-go v1.24.3
