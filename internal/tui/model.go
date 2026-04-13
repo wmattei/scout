@@ -51,10 +51,12 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 	}
 }
 
-// Init is called once when the program starts.
+// Init is called once when the program starts. Phase 1 starts with an empty
+// result list on purpose — the TUI shows a "start typing" hint until the
+// user enters a query. Background refresh and account resolution run
+// concurrently with the first render.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		initialResultsCmd(m.memory, ""),
 		refreshTopLevelCmd(m.awsCtx, m.db, m.memory),
 		spinTickCmd(),
 		resolveAccountCmd(m.awsCtx),
