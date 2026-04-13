@@ -33,36 +33,37 @@ func initialResultsCmd(mem *index.Memory, query string) tea.Cmd {
 func refreshTopLevelCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
 
 		type subtaskResult struct {
 			typ core.ResourceType
 			rs  []core.Resource
 			err error
 		}
-		done := make(chan subtaskResult, 3)
 
-		go func() {
-			rs, err := awss3.ListBuckets(ctx, ac)
-			done <- subtaskResult{core.RTypeBucket, rs, err}
-		}()
-		go func() {
-			rs, err := awsecs.ListServices(ctx, ac)
-			done <- subtaskResult{core.RTypeEcsService, rs, err}
-		}()
-		go func() {
-			rs, err := awsecs.ListTaskDefFamilies(ctx, ac)
-			done <- subtaskResult{core.RTypeEcsTaskDefFamily, rs, err}
-		}()
-
-		for i := 0; i < 3; i++ {
-			res := <-done
-			if res.err != nil {
-				// Phase 4: forward to error toast. For now, drop.
-				continue
-			}
-			persist(ctx, db, mem, res.typ, res.rs)
+		// Run the three subtasks sequentially for Phase 1. Interleaved
+		// updates are a Phase 2 improvement; Phase 1 prioritizes
+		// simplicity and determinism.
+		subtasks := []func() subtaskResult{
+			func() subtaskResult {
+				rs, err := awss3.ListBuckets(ctx, ac)
+				return subtaskResult{core.RTypeBucket, rs, err}
+			},
+			func() subtaskResult {
+				rs, err := awsecs.ListServices(ctx, ac)
+				return subtaskResult{core.RTypeEcsService, rs, err}
+			},
+			func() subtaskResult {
+				rs, err := awsecs.ListTaskDefFamilies(ctx, ac)
+				return subtaskResult{core.RTypeEcsTaskDefFamily, rs, err}
+			},
 		}
+		for _, run := range subtasks {
+			res := run()
+			if res.err == nil {
+				persist(ctx, db, mem, res.typ, res.rs)
+			}
+		}
+		cancel()
 		return msgResourcesUpdated{}
 	}
 }
