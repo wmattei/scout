@@ -34,9 +34,11 @@ func (m Model) View() string {
 
 	emptyMsg := "no results"
 	switch {
-	case m.input.Value() == "" && len(m.results) == 0:
+	case m.input.Value() == "" && m.memory.Len() == 0:
 		emptyMsg = "cache is empty — fetching…"
-	case m.input.Value() != "" && len(m.results) == 0:
+	case m.input.Value() == "":
+		emptyMsg = "start typing to search cached resources"
+	case len(m.results) == 0:
 		emptyMsg = fmt.Sprintf("no matches for %q", m.input.Value())
 	}
 	results := renderResults(m.results, m.selected, m.width, resultsHeight, emptyMsg)

@@ -65,6 +65,22 @@ func (m *Memory) DeleteMissing(t core.ResourceType, keep map[string]struct{}) {
 	}
 }
 
+// Len returns the number of top-level resources currently held. Used by
+// the TUI to distinguish "cache genuinely empty" from "user hasn't typed
+// yet" for the empty-state message.
+func (m *Memory) Len() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, r := range m.byTypeKey {
+		switch r.Type {
+		case core.RTypeBucket, core.RTypeEcsService, core.RTypeEcsTaskDefFamily:
+			n++
+		}
+	}
+	return n
+}
+
 // All returns a snapshot slice of all top-level resources the TUI should
 // search against. Top-level in Phase 1 means: buckets, ecs services, and
 // ecs task def families. Folders and objects are excluded here — they are

@@ -11,17 +11,7 @@ import (
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
 )
-
-// initialResultsCmd produces the first render's results from whatever the
-// in-memory index currently holds. It does not hit AWS.
-func initialResultsCmd(mem *index.Memory, query string) tea.Cmd {
-	return func() tea.Msg {
-		results := search.Fuzzy(query, mem.All(), 200)
-		return msgResults{results: results}
-	}
-}
 
 // refreshTopLevelCmd kicks off SWR refresh for buckets + ecs services +
 // ecs task-def families concurrently. Each subtask writes its results to
