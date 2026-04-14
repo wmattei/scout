@@ -67,9 +67,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case msgResourcesUpdated:
-		// The SWR refresh wrote new data into m.memory. Recompute the
-		// current top-level list against the updated snapshot.
-		m.results = computeResults(m.input.Value(), m.memory)
+		// The refresh (top-level or service-scope) wrote new data into
+		// m.memory. Recompute the current result list against the
+		// updated snapshot — respecting the active scope so a
+		// service-scoped session fuzzy-matches only its own type
+		// instead of the unfiltered in-memory index.
+		scope := search.ParseScope(m.input.Value())
+		if scope.HasService {
+			m.results = search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults)
+		} else {
+			m.results = computeResults(m.input.Value(), m.memory)
+		}
 		m.clampSelected()
 		if len(msg.errors) > 0 {
 			m.toast = newErrorToast(summarizeErrors(msg.errors))
@@ -470,14 +478,19 @@ func readScopedCache(db *index.DB, scope search.Scope) []search.Result {
 	return search.Prefix(scope.Leaf, cached, MaxDisplayedResults)
 }
 
-// isLoadingScoped reports whether a scoped search is currently in flight:
-// the input is scoped and the last completed scoped query does not match
-// what the user is currently looking at. The view uses this to render a
-// loading indicator instead of the "no matches" empty state while live
-// results are still coming back.
+// isLoadingScoped reports whether an S3 drill-in search is currently
+// in flight: the input is a bucket-scoped path and the last completed
+// scoped query does not match what the user is currently looking at.
+// The view uses this to render a loading indicator instead of the
+// "no matches" empty state while live results are still coming back.
+//
+// Service-scope mode ("s3:", "ecs:", ...) does NOT use scopedQuery and
+// is explicitly excluded here — its own empty state comes from
+// memory.ByType(scope.Service) returning zero rows, and the status bar
+// spinner covers the loading affordance.
 func (m Model) isLoadingScoped() bool {
 	scope := search.ParseScope(m.input.Value())
-	return !scope.IsTopLevel() && m.scopedQuery != m.input.Value()
+	return scope.Bucket != "" && m.scopedQuery != m.input.Value()
 }
 
 // visibleSearchResults returns whichever result list is currently active
