@@ -42,6 +42,11 @@ var (
 	styleStatusBar = lipgloss.NewStyle().Background(ac("#D0D0E0", "#1A1A2E")).Foreground(ac("#000000", "#D0D0D0"))
 	styleSpinner   = lipgloss.NewStyle().Foreground(ac("#005F87", "#5FAFD7"))
 	styleError     = lipgloss.NewStyle().Bold(true).Foreground(ac("#870000", "#FF5F5F"))
+	styleToastError = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFFFF"}).
+		Background(lipgloss.AdaptiveColor{Light: "#AF0000", Dark: "#870000"}).
+		Padding(0, 1)
 	styleDivider   = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
 )
 
