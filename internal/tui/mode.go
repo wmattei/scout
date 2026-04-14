@@ -14,6 +14,10 @@ const (
 	// resource. All actions are stubbed in Phase 2 and surface a toast
 	// on activation; Phase 3 implements them for real.
 	modeDetails
+
+	// modeTailLogs shows the full-screen streaming log viewport backed
+	// by CloudWatch Logs Live Tail.
+	modeTailLogs
 )
 
 // String returns a short debug name for the mode.
@@ -23,6 +27,8 @@ func (m Mode) String() string {
 		return "search"
 	case modeDetails:
 		return "details"
+	case modeTailLogs:
+		return "tail-logs"
 	default:
 		return "unknown"
 	}

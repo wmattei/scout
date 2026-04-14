@@ -30,19 +30,29 @@ import (
 //
 // The function returns just the body rows — the caller composes them
 // alongside the input bar, dividers, and status line in view.go.
-func renderDetails(r core.Resource, actionSel int, width int) string {
+func renderDetails(m Model, width int) string {
+	r := m.detailsResource
+	actionSel := m.actionSel
+
 	var b strings.Builder
 
-	// Header row for the Details section.
 	b.WriteString(styleDetailsHeader.Render("Details"))
 	b.WriteString("\n\n")
 
-	// Field rows.
 	writeField(&b, "Name", r.DisplayName)
-	writeField(&b, "ARN", r.ARN())
+	writeField(&b, "ARN", detailsARN(r, m))
+
+	// Log group row when we've resolved task-def details and at least
+	// one log group is configured. Uses the same family-lookup logic as
+	// the Tail Logs action so services and task-def families share the
+	// same row.
+	if family := taskDefFamilyForDetails(m); family != "" {
+		if d, ok := m.taskDefDetails[family]; ok && d != nil && len(d.LogGroups) > 0 {
+			writeField(&b, "Log", d.LogGroups[0])
+		}
+	}
 	b.WriteString("\n")
 
-	// Actions header.
 	b.WriteString(styleDetailsHeader.Render("Actions"))
 	b.WriteString("\n\n")
 
@@ -68,6 +78,23 @@ func renderDetails(r core.Resource, actionSel int, width int) string {
 		}
 	}
 	return b.String()
+}
+
+// detailsARN resolves the ARN shown in the Details view. For task-def
+// families it returns the lazily-resolved revision ARN if available;
+// otherwise it falls back to "…resolving" or the family pseudo-ARN.
+func detailsARN(r core.Resource, m Model) string {
+	if r.Type != core.RTypeEcsTaskDefFamily {
+		return r.ARN()
+	}
+	d, ok := m.taskDefDetails[r.Key]
+	if !ok {
+		return r.ARN()
+	}
+	if d == nil {
+		return "…resolving"
+	}
+	return d.ARN
 }
 
 // writeField appends a single "  Label    Value" row to b.
