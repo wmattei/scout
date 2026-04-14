@@ -35,6 +35,8 @@ func (m Model) View() string {
 		body = padBlock(body, bodyHeight)
 	case modeTailLogs:
 		body = renderTailLogs(m, bodyHeight)
+	case modeSwitcher:
+		body = renderSwitcher(m.switcher, m.width, bodyHeight)
 	default:
 		body = m.renderSearchBody(bodyHeight)
 	}

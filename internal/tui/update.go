@@ -59,6 +59,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDetails(msg)
 		case modeTailLogs:
 			return m.updateTail(msg)
+		case modeSwitcher:
+			return m.updateSwitcher(msg)
 		default:
 			return m.updateSearch(msg)
 		}
@@ -149,6 +151,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.account = msg.account
 		return m, nil
 
+	case msgSwitcherCommitted:
+		m.inFlight = false
+		m.inFlightLabel = ""
+		if msg.err != nil {
+			m.toast = newErrorToast("switch failed: " + msg.err.Error())
+			return m, nil
+		}
+		// Close the old DB handle — we're done with it. Any still-
+		// running refreshTopLevelCmd from the old context will fail
+		// its next UpsertResources silently, which is acceptable for
+		// v0 (see the Phase 4 plan's architecture note).
+		if m.db != nil {
+			_ = m.db.Close()
+		}
+		m.awsCtx = msg.ctx
+		m.db = msg.db
+		m.memory = msg.memory
+		// The new context needs its own activity middleware so SDK
+		// call instrumentation continues to work.
+		m.activity.Attach(&m.awsCtx.Cfg)
+		// Reset search state so the user lands on a clean frame.
+		m.input.SetValue("")
+		m.results = nil
+		m.scopedResults = nil
+		m.scopedQuery = ""
+		m.selected = 0
+		m.taskDefDetails = make(map[string]*awsecs.TaskDefDetails)
+		m.account = ""
+		// Close the switcher overlay.
+		m.switcher.Hide()
+		m.mode = modeSearch
+		m.toast = newToast(fmt.Sprintf("context: %s / %s", m.awsCtx.Profile, m.awsCtx.Region), 3*time.Second)
+		// Kick off a fresh top-level refresh + re-resolve caller
+		// identity for the new profile.
+		return m, tea.Batch(
+			refreshTopLevelCmd(m.awsCtx, m.db, m.memory),
+			resolveAccountCmd(m.awsCtx),
+		)
+
 	case msgSpinTick:
 		m.spinTick++
 		// Clear an expired toast so the view falls back to the normal
@@ -215,8 +256,13 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		return m.handleTab()
-	case "ctrl+p", "ctrl+r", "esc":
-		// Reserved for later phases. No-op in Phase 2.
+	case "ctrl+p":
+		m.switcher = newSwitcher(m.awsCtx.Profile, m.awsCtx.Region)
+		m.switcher.Show()
+		m.prevMode = modeSearch
+		m.mode = modeSwitcher
+		return m, nil
+	case "ctrl+r", "esc":
 		return m, nil
 	}
 
@@ -230,6 +276,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	actions := ActionsFor(m.detailsResource.Type)
 	switch msg.String() {
+	case "ctrl+p":
+		m.switcher = newSwitcher(m.awsCtx.Profile, m.awsCtx.Region)
+		m.switcher.Show()
+		m.prevMode = modeDetails
+		m.mode = modeSwitcher
+		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
@@ -441,4 +493,92 @@ func summarizeErrors(errs []string) string {
 		return "refresh failed: " + errs[0]
 	}
 	return fmt.Sprintf("%d subtasks failed: %s", len(errs), errs[0])
+}
+
+// updateSwitcher handles key events while the profile/region overlay is
+// open. Esc hides the overlay and restores the previous mode; Enter
+// commits the selection and triggers a context swap via
+// commitSwitcherCmd; Tab flips focused panes; ↑/↓ move the selection;
+// printable keys append to the focused pane's filter; Backspace trims
+// one rune from the focused filter.
+func (m Model) updateSwitcher(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.switcher.Hide()
+		m.mode = m.prevMode
+		return m, nil
+	case "tab":
+		if m.switcher.focused == switcherPaneProfile {
+			m.switcher.focused = switcherPaneRegion
+		} else {
+			m.switcher.focused = switcherPaneProfile
+		}
+		return m, nil
+	case "up":
+		if m.switcher.focused == switcherPaneProfile && m.switcher.profileSel > 0 {
+			m.switcher.profileSel--
+		}
+		if m.switcher.focused == switcherPaneRegion && m.switcher.regionSel > 0 {
+			m.switcher.regionSel--
+		}
+		return m, nil
+	case "down":
+		if m.switcher.focused == switcherPaneProfile {
+			vals, _ := m.switcher.filteredProfiles()
+			if m.switcher.profileSel < len(vals)-1 {
+				m.switcher.profileSel++
+			}
+		}
+		if m.switcher.focused == switcherPaneRegion {
+			vals, _ := m.switcher.filteredRegions()
+			if m.switcher.regionSel < len(vals)-1 {
+				m.switcher.regionSel++
+			}
+		}
+		return m, nil
+	case "enter":
+		profile := m.switcher.selectedProfile()
+		region := m.switcher.selectedRegion()
+		if profile == "" || region == "" {
+			m.toast = newErrorToast("switcher: nothing selected")
+			return m, nil
+		}
+		// No-op commit when the user didn't actually change anything.
+		if profile == m.awsCtx.Profile && region == m.awsCtx.Region {
+			m.switcher.Hide()
+			m.mode = m.prevMode
+			return m, nil
+		}
+		m.inFlight = true
+		m.inFlightLabel = "switching context…"
+		return m, commitSwitcherCmd(profile, region)
+	case "backspace":
+		if m.switcher.focused == switcherPaneProfile && len(m.switcher.profileFilter) > 0 {
+			r := []rune(m.switcher.profileFilter)
+			m.switcher.profileFilter = string(r[:len(r)-1])
+			m.switcher.profileSel = 0
+		}
+		if m.switcher.focused == switcherPaneRegion && len(m.switcher.regionFilter) > 0 {
+			r := []rune(m.switcher.regionFilter)
+			m.switcher.regionFilter = string(r[:len(r)-1])
+			m.switcher.regionSel = 0
+		}
+		return m, nil
+	}
+	// Printable characters append to the focused filter.
+	if len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		if r >= 32 {
+			if m.switcher.focused == switcherPaneProfile {
+				m.switcher.profileFilter += string(r)
+				m.switcher.profileSel = 0
+			} else {
+				m.switcher.regionFilter += string(r)
+				m.switcher.regionSel = 0
+			}
+		}
+	}
+	return m, nil
 }

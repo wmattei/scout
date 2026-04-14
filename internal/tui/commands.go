@@ -227,3 +227,49 @@ func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
 		}
 	}
 }
+
+// msgSwitcherCommitted carries the outcome of a profile/region swap.
+// On success, the new Context replaces m.awsCtx, the new DB handle
+// replaces m.db, and the in-memory index is swapped to the freshly
+// loaded cache. On failure, the old state is preserved and an error
+// toast is raised.
+type msgSwitcherCommitted struct {
+	ctx    *awsctx.Context
+	db     *index.DB
+	memory *index.Memory
+	err    error
+}
+
+// commitSwitcherCmd runs the heavy lifting of a profile/region swap
+// off the UI goroutine: load a new aws.Config via ResolveForProfile,
+// open the matching SQLite file, LoadAll() into a fresh Memory, and
+// return everything via msgSwitcherCommitted. The UI handler does
+// the final state assignment so the swap is atomic from the Update
+// loop's perspective.
+func commitSwitcherCmd(profile, region string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		newCtx, err := awsctx.ResolveForProfile(ctx, profile, region)
+		if err != nil {
+			return msgSwitcherCommitted{err: err}
+		}
+		newDB, err := index.Open(newCtx.Profile, newCtx.Region)
+		if err != nil {
+			return msgSwitcherCommitted{err: err}
+		}
+		cached, err := newDB.LoadAll(ctx)
+		if err != nil {
+			_ = newDB.Close()
+			return msgSwitcherCommitted{err: err}
+		}
+		mem := index.NewMemory()
+		mem.Load(cached)
+		return msgSwitcherCommitted{
+			ctx:    newCtx,
+			db:     newDB,
+			memory: mem,
+		}
+	}
+}

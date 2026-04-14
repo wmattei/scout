@@ -59,6 +59,12 @@ type Model struct {
 
 	// Unused in Phase 2; reserved for Phase 4's refresh progress tracking.
 	lastTopLevel []core.Resource
+
+	// Switcher overlay state and the previous mode to return to on
+	// Esc. `switcher.Visible` mirrors `mode == modeSwitcher`; keeping
+	// both in sync is the responsibility of the Update handlers.
+	switcher Switcher
+	prevMode Mode
 }
 
 // NewModel constructs the initial model for the bubbletea program.
