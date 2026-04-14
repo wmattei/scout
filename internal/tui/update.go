@@ -73,6 +73,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case msgSpinTick:
 		m.spinTick++
+		// Clear an expired toast so the view falls back to the normal
+		// status bar. Only the spinner ticker is reliably called often
+		// enough to do this without a dedicated timer.
+		if !m.toast.isActive() {
+			m.toast = Toast{}
+		}
 		return m, spinTickCmd()
 	}
 
