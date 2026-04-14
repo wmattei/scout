@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -23,8 +24,7 @@ import (
 // indicator, tag, spacing, and meta columns.
 func renderResults(results []search.Result, selected, width, height int, emptyMsg string) string {
 	if len(results) == 0 {
-		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
-			styleRowDim.Render(emptyMsg))
+		return centerEmptyState(width, height, emptyMsg)
 	}
 
 	const (
@@ -136,8 +136,9 @@ func renderNameWithHighlights(name string, matchIdx []int, maxWidth int) string 
 	return b.String()
 }
 
-// renderMeta produces the right-aligned meta column for a resource. Phase 1
-// shows region for buckets and cluster name for ecs services. Task def
+// renderMeta produces the right-aligned meta column for a resource.
+// Phase 1 shows region for buckets and cluster name for ecs services.
+// Phase 2 adds mtime for folders and size + mtime for objects. Task def
 // families have no meta yet.
 func renderMeta(r core.Resource) string {
 	switch r.Type {
@@ -145,9 +146,60 @@ func renderMeta(r core.Resource) string {
 		return styleRowDim.Render(r.Meta["region"])
 	case core.RTypeEcsService:
 		return styleRowDim.Render(r.Meta["cluster"])
+	case core.RTypeFolder:
+		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+			return styleRowDim.Render(formatUnixTime(ts))
+		}
+		return ""
+	case core.RTypeObject:
+		var parts []string
+		if s, ok := r.Meta["size"]; ok && s != "" {
+			parts = append(parts, formatBytes(s))
+		}
+		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+			parts = append(parts, formatUnixTime(ts))
+		}
+		return styleRowDim.Render(strings.Join(parts, "  "))
 	default:
 		return ""
 	}
+}
+
+// formatBytes turns a decimal byte-count string into a human-readable
+// suffix ("12.4 MB"). Empty or unparseable input returns "".
+func formatBytes(s string) string {
+	var n int64
+	_, err := fmt.Sscanf(s, "%d", &n)
+	if err != nil || n < 0 {
+		return ""
+	}
+	const (
+		kib = 1024
+		mib = kib * 1024
+		gib = mib * 1024
+	)
+	switch {
+	case n >= gib:
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(gib))
+	case n >= mib:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(mib))
+	case n >= kib:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// formatUnixTime turns a decimal Unix seconds string into a short
+// "YYYY-MM-DD HH:MM" timestamp in the local timezone. Empty or
+// unparseable input returns "".
+func formatUnixTime(s string) string {
+	var n int64
+	_, err := fmt.Sscanf(s, "%d", &n)
+	if err != nil || n <= 0 {
+		return ""
+	}
+	return time.Unix(n, 0).Local().Format("2006-01-02 15:04")
 }
 
 // padRight pads s with spaces on the right so its visual width equals n.
@@ -158,4 +210,49 @@ func padRight(s string, n int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", n-w)
+}
+
+// centerEmptyState returns a body exactly `height` lines tall with the
+// given message centered both vertically and horizontally. Used for all
+// empty-list states in the search view.
+//
+// This replaces an earlier lipgloss.Place call that could produce an
+// off-by-one line count when the message contained characters with
+// ambiguous display width (e.g. braille spinners), pushing the surrounding
+// frame out of alignment. Building the string by hand keeps line count
+// deterministic regardless of the content.
+func centerEmptyState(width, height int, msg string) string {
+	if height <= 0 {
+		return ""
+	}
+	styled := styleRowDim.Render(msg)
+	// lipgloss.Width handles ANSI escapes; use it to compute visible width.
+	msgWidth := lipgloss.Width(styled)
+	leftPad := (width - msgWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	line := strings.Repeat(" ", leftPad) + styled
+
+	// Split vertical padding: top gets the floor, bottom gets the rest so
+	// odd-height blocks lean one row toward the top (matches how list
+	// selectors usually look).
+	top := (height - 1) / 2
+	if top < 0 {
+		top = 0
+	}
+	bottom := height - 1 - top
+	if bottom < 0 {
+		bottom = 0
+	}
+
+	var b strings.Builder
+	for i := 0; i < top; i++ {
+		b.WriteString("\n")
+	}
+	b.WriteString(line)
+	for i := 0; i < bottom; i++ {
+		b.WriteString("\n")
+	}
+	return b.String()
 }

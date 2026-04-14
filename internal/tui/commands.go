@@ -11,6 +11,7 @@ import (
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
+	"github.com/wagnermattei/better-aws-cli/internal/search"
 )
 
 // refreshTopLevelCmd kicks off SWR refresh for buckets + ecs services +
@@ -84,4 +85,76 @@ func resolveAccountCmd(ac *awsctx.Context) tea.Cmd {
 		acct, _ := ac.CallerIdentity(ctx)
 		return msgAccount{account: acct}
 	}
+}
+
+// scopedSearchCmd runs the scoped (bucket/prefix) search behind modeSearch
+// when the input contains a `/`. It reads the SQLite cache for first
+// paint, fires a live ListObjectsV2 in parallel, persists every live
+// result to bucket_contents, merges cache + live into a single slice, and
+// returns the whole thing via msgScopedResults.
+//
+// The merge rule: live results win per (bucket, key) because they are
+// authoritative for size/mtime. Results are ordered by the search.Prefix
+// helper to match the TUI's display expectations.
+func scopedSearchCmd(ac *awsctx.Context, db *index.DB, query string) tea.Cmd {
+	return func() tea.Msg {
+		scope := search.ParseScope(query)
+		if scope.Bucket == "" {
+			return msgScopedResults{query: query, results: nil}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// 1. Cache read — fast, authoritative for first paint.
+		cached, _ := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
+
+		// 2. Live ListObjectsV2 at the narrowest prefix S3 can filter on.
+		// Concatenating Prefix+Leaf lets S3 do the filtering server-side
+		// (so typing narrows each request) and capping at
+		// MaxDisplayedResults keeps first-paint latency flat even for
+		// buckets with millions of keys.
+		livePrefix := scope.Prefix + scope.Leaf
+		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, livePrefix, MaxDisplayedResults)
+		if err != nil {
+			// On live failure, return whatever was in the cache so the
+			// UI still shows something. Phase 4's error toast will
+			// surface the error itself. search.Prefix both filters by
+			// the leaf and attaches the highlight span.
+			return msgScopedResults{
+				query:   query,
+				results: search.Prefix(scope.Leaf, cached, MaxDisplayedResults),
+			}
+		}
+
+		// 3. Persist the live results opportunistically.
+		_ = db.UpsertBucketContents(ctx, scope.Bucket, live)
+
+		// 4. Merge: live keys overwrite cache keys, then prefix-match
+		//    against the leaf in a single pass.
+		merged := mergeByKey(cached, live)
+		results := search.Prefix(scope.Leaf, merged, MaxDisplayedResults)
+		return msgScopedResults{query: query, results: results}
+	}
+}
+
+// mergeByKey merges two resource slices, preferring entries from `b` when
+// both slices contain the same Key. Returns a new slice; inputs are not
+// mutated.
+func mergeByKey(a, b []core.Resource) []core.Resource {
+	byKey := make(map[string]int, len(a)+len(b))
+	out := make([]core.Resource, 0, len(a)+len(b))
+	for _, r := range a {
+		byKey[r.Key] = len(out)
+		out = append(out, r)
+	}
+	for _, r := range b {
+		if i, ok := byKey[r.Key]; ok {
+			out[i] = r
+			continue
+		}
+		byKey[r.Key] = len(out)
+		out = append(out, r)
+	}
+	return out
 }
