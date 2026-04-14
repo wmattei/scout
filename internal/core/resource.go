@@ -77,6 +77,50 @@ type Resource struct {
 	Meta        map[string]string
 }
 
+// serviceAliases maps user-typed short names to the resource type they
+// scope the search to. The TUI's manual-scope feature triggers on
+// "<alias>:" — everything before the colon is looked up here and, if
+// found, the whole input is interpreted as a service-scoped filter.
+//
+// Aliases are case-sensitive lowercase. Add more by dropping a new
+// entry into this map — no other code has to change.
+var serviceAliases = map[string]ResourceType{
+	// S3 buckets.
+	"s3":      RTypeBucket,
+	"buckets": RTypeBucket,
+
+	// ECS services.
+	"ecs":      RTypeEcsService,
+	"svc":      RTypeEcsService,
+	"services": RTypeEcsService,
+
+	// ECS task-definition families.
+	"td":      RTypeEcsTaskDefFamily,
+	"task":    RTypeEcsTaskDefFamily,
+	"taskdef": RTypeEcsTaskDefFamily,
+}
+
+// ResourceTypeForAlias returns the resource type registered under the
+// given alias and a boolean reporting whether the lookup succeeded.
+// The comparison is case-sensitive; pass lowercase input.
+func ResourceTypeForAlias(alias string) (ResourceType, bool) {
+	t, ok := serviceAliases[alias]
+	return t, ok
+}
+
+// AliasesFor returns every alias registered for the given resource
+// type. Order is not guaranteed to be stable. Useful for help text and
+// future auto-complete hints.
+func AliasesFor(t ResourceType) []string {
+	var out []string
+	for alias, rt := range serviceAliases {
+		if rt == t {
+			out = append(out, alias)
+		}
+	}
+	return out
+}
+
 // ARN returns a canonical AWS ARN for the resource. For folders and objects
 // a pseudo-ARN of the form arn:aws:s3:::<bucket>/<key> is used so the
 // details panel can always show an "ARN" row. Phase 1 only calls this for

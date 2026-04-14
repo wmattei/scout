@@ -65,6 +65,15 @@ type Model struct {
 	// both in sync is the responsibility of the Update handlers.
 	switcher Switcher
 	prevMode Mode
+
+	// serviceScopeFetched tracks which service-scope aliases have had
+	// their "first-entry" live fetch fire during this session. On the
+	// first keystroke that activates "<alias>:", recomputeResults
+	// dispatches refreshServiceCmd and adds the alias to this set;
+	// subsequent keystrokes under the same alias just re-filter the
+	// in-memory index. The set is cleared by the switcher commit
+	// handler when the AWS context swaps.
+	serviceScopeFetched map[string]struct{}
 }
 
 // NewModel constructs the initial model for the bubbletea program.
@@ -76,16 +85,17 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 	ti.CharLimit = 512
 
 	return Model{
-		memory:         memory,
-		db:             db,
-		awsCtx:         awsCtx,
-		activity:       activity,
-		input:          ti,
-		width:          80,
-		height:         24,
-		mode:           modeSearch,
-		taskDefDetails: make(map[string]*awsecs.TaskDefDetails),
-		tailViewport:   viewport.New(80, 10),
+		memory:              memory,
+		db:                  db,
+		awsCtx:              awsCtx,
+		activity:            activity,
+		input:               ti,
+		width:               80,
+		height:              24,
+		mode:                modeSearch,
+		taskDefDetails:      make(map[string]*awsecs.TaskDefDetails),
+		tailViewport:        viewport.New(80, 10),
+		serviceScopeFetched: make(map[string]struct{}),
 	}
 }
 

@@ -63,6 +63,39 @@ func refreshTopLevelCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory) tea
 	}
 }
 
+// refreshServiceCmd fires a live fetch for a single resource type,
+// persists the result, and emits msgResourcesUpdated. Used by the
+// manual service-scope feature: the first time a session enters
+// "<alias>:", the TUI fires this to populate the in-memory index with
+// fresh data for just that type (instead of calling the full
+// refreshTopLevelCmd, which would walk all three).
+func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t core.ResourceType) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		var (
+			rs  []core.Resource
+			err error
+		)
+		switch t {
+		case core.RTypeBucket:
+			rs, err = awss3.ListBuckets(ctx, ac)
+		case core.RTypeEcsService:
+			rs, err = awsecs.ListServices(ctx, ac)
+		case core.RTypeEcsTaskDefFamily:
+			rs, err = awsecs.ListTaskDefFamilies(ctx, ac)
+		default:
+			return msgResourcesUpdated{}
+		}
+		if err != nil {
+			return msgResourcesUpdated{errors: []string{err.Error()}}
+		}
+		persist(ctx, db, mem, t, rs)
+		return msgResourcesUpdated{}
+	}
+}
+
 // persist applies a diff-patch: upsert all received resources, then delete
 // any resources of this type that were NOT in the fresh set. Writes go to
 // the in-memory index first (instant UI snap) and then to SQLite.
