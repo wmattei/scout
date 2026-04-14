@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,18 +16,23 @@ import (
 
 // Custom messages emitted by commands.
 type (
-	msgResourcesUpdated struct{}
-	msgAccount          struct{ account string }
-	msgSpinTick         struct{}
+	msgResourcesUpdated struct {
+		errors []string // one string per failed subtask, empty on full success
+	}
+	msgAccount  struct{ account string }
+	msgSpinTick struct{}
 
 	// msgScopedResults carries the merged cache+live result set for a
 	// scoped (bucket/prefix) search. `query` is the exact input value
 	// that produced these results — the handler drops the message if
 	// the input has moved on since, so stale results can't clobber
-	// fresher ones.
+	// fresher ones. `err` is set when the live fetch failed; the
+	// handler surfaces it as an error toast only if the query still
+	// matches the current input.
 	msgScopedResults struct {
 		query   string
 		results []search.Result
+		err     string
 	}
 )
 
@@ -62,6 +68,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// current top-level list against the updated snapshot.
 		m.results = computeResults(m.input.Value(), m.memory)
 		m.clampSelected()
+		if len(msg.errors) > 0 {
+			m.toast = newErrorToast(summarizeErrors(msg.errors))
+		}
 		return m, nil
 
 	case msgScopedResults:
@@ -75,17 +84,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scopedResults = msg.results
 		m.scopedQuery = msg.query
 		m.clampSelected()
+		if msg.err != "" {
+			m.toast = newErrorToast(msg.err)
+		}
 		return m, nil
 
 	case msgActionDone:
 		m.inFlight = false
 		m.inFlightLabel = ""
-		m.toast = newToast(msg.toast, 4*time.Second)
+		if msg.err != nil {
+			m.toast = newErrorToast(msg.toast)
+		} else {
+			m.toast = newToast(msg.toast, 4*time.Second)
+		}
 		return m, nil
 
 	case msgTaskDefResolved:
 		if msg.err != nil {
-			// Phase 4 will surface this as an error toast.
+			m.toast = newErrorToast("describe task def failed: " + msg.err.Error())
 			return m, nil
 		}
 		if m.taskDefDetails == nil {
@@ -99,7 +115,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inFlight = false
 			m.inFlightLabel = ""
 			m.mode = modeSearch
-			m.toast = newToast("tail start failed: "+msg.err.Error(), 4*time.Second)
+			m.toast = newErrorToast("tail start failed: " + msg.err.Error())
 			return m, nil
 		}
 		m.tailStream = msg.stream
@@ -112,7 +128,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.eof {
 			m.tailStream = nil
 			if msg.err != nil {
-				m.toast = newToast("tail ended: "+msg.err.Error(), 4*time.Second)
+				m.toast = newErrorToast("tail ended: " + msg.err.Error())
 			}
 			return m, nil
 		}
@@ -412,4 +428,17 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.tailViewport, cmd = m.tailViewport.Update(msg)
 	return m, cmd
+}
+
+// summarizeErrors turns a slice of subtask error strings into a single
+// toast message. One error yields its text; multiple are prefixed with
+// a count so the user knows more than one thing broke.
+func summarizeErrors(errs []string) string {
+	if len(errs) == 0 {
+		return ""
+	}
+	if len(errs) == 1 {
+		return "refresh failed: " + errs[0]
+	}
+	return fmt.Sprintf("%d subtasks failed: %s", len(errs), errs[0])
 }
