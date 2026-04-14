@@ -1,54 +1,76 @@
 package tui
 
-import "github.com/wagnermattei/better-aws-cli/internal/core"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/wagnermattei/better-aws-cli/internal/core"
+)
 
 // Action is a single selectable entry in the Details view's Actions list.
-// Phase 2 only uses Label — execution is stubbed and uniformly produces a
-// "not yet implemented — Phase 3" toast. Phase 3 will add an Execute
-// function field (or swap this struct for an interface).
+// Label is what the user sees; Execute is called (via the dispatcher in
+// update.go) when the action is activated. Execute receives the current
+// Model and returns a (new Model, tea.Cmd) pair using the same contract
+// as Update so it can set fields on m, fire follow-up commands, or both.
+//
+// An Execute may be nil for actions that are not yet implemented — the
+// dispatcher will fall back to the "not yet implemented" toast in that
+// case. This is the migration path: Phase 3 tasks fill in each Execute
+// one at a time, and nothing breaks along the way.
 type Action struct {
-	Label string
+	Label   string
+	Execute ActionExecute
+}
+
+// ActionExecute is the function signature for an action's behavior. It
+// mirrors bubbletea's Update signature so actions can freely mutate the
+// model and dispatch side-effect commands.
+type ActionExecute func(m Model) (Model, tea.Cmd)
+
+// msgActionDone is emitted by any in-flight async action when its work
+// completes. The dispatcher in update.go handles the message by clearing
+// `inFlight` and showing the resulting toast.
+type msgActionDone struct {
+	toast string
+	err   error
 }
 
 // ActionsFor returns the ordered action list for a resource type. The
-// ordering matches the spec's actions matrix and determines the number
-// hotkey assigned to each action (first item is `1`, second is `2`, etc.).
-//
-// Unknown types return an empty slice; the Details view handles that
-// gracefully by showing only the Details panel.
+// Execute fields are left nil in this declaration and populated by each
+// action-implementation task so this file stays a single source of truth
+// for ordering, labeling, and hotkey assignment.
 func ActionsFor(t core.ResourceType) []Action {
 	switch t {
 	case core.RTypeBucket:
 		return []Action{
-			{Label: "Open in Browser"},
-			{Label: "Copy URI"},
-			{Label: "Copy ARN"},
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy URI", Execute: execCopyURI},
+			{Label: "Copy ARN", Execute: execCopyARN},
 		}
 	case core.RTypeFolder:
 		return []Action{
-			{Label: "Open in Browser"},
-			{Label: "Copy URI"},
-			{Label: "Copy ARN"},
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy URI", Execute: execCopyURI},
+			{Label: "Copy ARN", Execute: execCopyARN},
 		}
 	case core.RTypeObject:
 		return []Action{
-			{Label: "Open in Browser"},
-			{Label: "Copy URI"},
-			{Label: "Copy ARN"},
-			{Label: "Download"},
-			{Label: "Preview"},
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy URI", Execute: execCopyURI},
+			{Label: "Copy ARN", Execute: execCopyARN},
+			{Label: "Download", Execute: execDownload},
+			{Label: "Preview", Execute: execPreview},
 		}
 	case core.RTypeEcsService:
 		return []Action{
-			{Label: "Open in Browser"},
-			{Label: "Force new Deployment"},
-			{Label: "Tail Logs"},
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Force new Deployment", Execute: execForceDeploy},
+			{Label: "Tail Logs", Execute: execTailLogs},
 		}
 	case core.RTypeEcsTaskDefFamily:
 		return []Action{
-			{Label: "Open in Browser"},
-			{Label: "Copy ARN"},
-			{Label: "Tail Logs"},
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy ARN", Execute: execCopyARN},
+			{Label: "Tail Logs", Execute: execTailLogs},
 		}
 	default:
 		return nil

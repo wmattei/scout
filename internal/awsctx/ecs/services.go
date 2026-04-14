@@ -79,16 +79,20 @@ func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, err
 				if svc.ServiceArn == nil || svc.ServiceName == nil {
 					continue
 				}
+				meta := map[string]string{
+					"cluster":    clusterShortName(cluster),
+					"clusterArn": cluster,
+					"launchType": string(svc.LaunchType),
+					"desired":    fmt.Sprintf("%d", svc.DesiredCount),
+				}
+				if svc.TaskDefinition != nil {
+					meta["taskDefFamily"] = taskDefFamilyFromArn(*svc.TaskDefinition)
+				}
 				resources = append(resources, core.Resource{
 					Type:        core.RTypeEcsService,
 					Key:         *svc.ServiceArn,
 					DisplayName: *svc.ServiceName,
-					Meta: map[string]string{
-						"cluster":    clusterShortName(cluster),
-						"clusterArn": cluster,
-						"launchType": string(svc.LaunchType),
-						"desired":    fmt.Sprintf("%d", svc.DesiredCount),
-					},
+					Meta:        meta,
 				})
 			}
 		}
@@ -106,3 +110,22 @@ func clusterShortName(arn string) string {
 }
 
 func stringPtr(s string) *string { return &s }
+
+// taskDefFamilyFromArn extracts the family name from a task-definition
+// ARN of the form
+// arn:aws:ecs:<region>:<account>:task-definition/<family>:<revision>.
+// Returns "" if the ARN doesn't match the expected shape.
+func taskDefFamilyFromArn(arn string) string {
+	// Find the segment after "task-definition/".
+	const marker = "task-definition/"
+	idx := strings.Index(arn, marker)
+	if idx < 0 {
+		return ""
+	}
+	rest := arn[idx+len(marker):]
+	// Strip ":<revision>" suffix if present.
+	if colon := strings.IndexByte(rest, ':'); colon >= 0 {
+		return rest[:colon]
+	}
+	return rest
+}
