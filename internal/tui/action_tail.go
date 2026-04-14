@@ -38,6 +38,11 @@ func execTailLogs(m Model) (Model, tea.Cmd) {
 	m.mode = modeTailLogs
 	m.tailGroup = group
 	m.tailLines = nil
+	// Clear the viewport content too — without this, the previous tail
+	// session's lines linger visually until the new stream emits enough
+	// events to overwrite them.
+	m.tailViewport.SetContent("")
+	m.tailViewport.GotoTop()
 	m.inFlight = true
 	m.inFlightLabel = "starting tail…"
 	return m, tailLogsStartCmd(m.awsCtx, group, m.account)
