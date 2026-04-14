@@ -35,11 +35,11 @@ func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t co
 		)
 		switch t {
 		case core.RTypeBucket:
-			rs, err = awss3.ListBuckets(ctx, ac)
+			rs, err = awss3.ListBuckets(ctx, ac, awsctx.ListOptions{})
 		case core.RTypeEcsService:
-			rs, err = awsecs.ListServices(ctx, ac)
+			rs, err = awsecs.ListServices(ctx, ac, awsctx.ListOptions{})
 		case core.RTypeEcsTaskDefFamily:
-			rs, err = awsecs.ListTaskDefFamilies(ctx, ac)
+			rs, err = awsecs.ListTaskDefFamilies(ctx, ac, awsctx.ListOptions{})
 		default:
 			return msgResourcesUpdated{}
 		}

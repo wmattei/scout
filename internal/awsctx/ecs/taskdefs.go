@@ -17,22 +17,41 @@ import (
 // via DescribeTaskDefinition when actions need it (Phase 3).
 //
 // Families are listed with status=ACTIVE so retired families don't clutter
-// the results.
-func ListTaskDefFamilies(ctx context.Context, ac *awsctx.Context) ([]core.Resource, error) {
+// the results. opts.Limit caps the total returned (the per-page MaxResults
+// is computed against it). opts.Prefix maps directly to the API's
+// FamilyPrefix field, so filtering happens server-side.
+//
+// Pass `awsctx.ListOptions{}` for the historical behaviour.
+func ListTaskDefFamilies(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
 	client := awsecs.NewFromConfig(ac.Cfg)
+
+	// Default per-page MaxResults is 100; if the caller capped lower we
+	// fetch in smaller pages so an early break doesn't over-fetch.
+	pageSize := int32(100)
+	if opts.Limit > 0 && int32(opts.Limit) < pageSize {
+		pageSize = int32(opts.Limit)
+	}
 
 	var families []string
 	var next *string
 	for {
-		out, err := client.ListTaskDefinitionFamilies(ctx, &awsecs.ListTaskDefinitionFamiliesInput{
+		input := &awsecs.ListTaskDefinitionFamiliesInput{
 			Status:     ecstypes.TaskDefinitionFamilyStatusActive,
 			NextToken:  next,
-			MaxResults: aws.Int32(100),
-		})
+			MaxResults: aws.Int32(pageSize),
+		}
+		if opts.Prefix != "" {
+			input.FamilyPrefix = aws.String(opts.Prefix)
+		}
+		out, err := client.ListTaskDefinitionFamilies(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("ecs:ListTaskDefinitionFamilies: %w", err)
 		}
 		families = append(families, out.Families...)
+		if opts.Limit > 0 && len(families) >= opts.Limit {
+			families = families[:opts.Limit]
+			break
+		}
 		if out.NextToken == nil {
 			break
 		}

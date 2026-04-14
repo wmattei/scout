@@ -20,10 +20,16 @@ import (
 //  3. DescribeServices in batches of 10 (the hard limit for that API) —
 //     gives launch type, desired count, and the user-facing service name.
 //
-// The Key is the full service ARN so actions (Phase 3) can use it directly.
-// DisplayName is the bare service name (last segment of the ARN path).
-// Meta includes the cluster ARN so the Tail Logs action can resolve tasks.
-func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, error) {
+// opts.Limit caps the total number of services returned and short-
+// circuits the cluster walk once the cap is reached. opts.Prefix
+// applies a case-sensitive client-side filter on the service name —
+// ECS has no native server-side prefix on services, so this is the
+// best we can do without per-service describes from a different code
+// path.
+//
+// Pass `awsctx.ListOptions{}` for the historical "every service, no
+// filter" behaviour.
+func ListServices(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
 	client := awsecs.NewFromConfig(ac.Cfg)
 
 	// Step 1: clusters.
@@ -43,6 +49,10 @@ func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, err
 
 	var resources []core.Resource
 	for _, cluster := range clusterArns {
+		if opts.Limit > 0 && len(resources) >= opts.Limit {
+			break
+		}
+
 		// Step 2: services within this cluster.
 		var serviceArns []string
 		var svcNext *string
@@ -63,6 +73,9 @@ func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, err
 
 		// Step 3: describe in batches of 10.
 		for i := 0; i < len(serviceArns); i += 10 {
+			if opts.Limit > 0 && len(resources) >= opts.Limit {
+				break
+			}
 			end := i + 10
 			if end > len(serviceArns) {
 				end = len(serviceArns)
@@ -77,6 +90,9 @@ func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, err
 			}
 			for _, svc := range out.Services {
 				if svc.ServiceArn == nil || svc.ServiceName == nil {
+					continue
+				}
+				if opts.Prefix != "" && !strings.HasPrefix(*svc.ServiceName, opts.Prefix) {
 					continue
 				}
 				meta := map[string]string{
@@ -94,6 +110,9 @@ func ListServices(ctx context.Context, ac *awsctx.Context) ([]core.Resource, err
 					DisplayName: *svc.ServiceName,
 					Meta:        meta,
 				})
+				if opts.Limit > 0 && len(resources) >= opts.Limit {
+					break
+				}
 			}
 		}
 	}
