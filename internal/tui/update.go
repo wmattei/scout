@@ -193,12 +193,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.switcher.Hide()
 		m.mode = modeSearch
 		m.toast = newToast(fmt.Sprintf("context: %s / %s", m.awsCtx.Profile, m.awsCtx.Region), 3*time.Second)
-		// Kick off a fresh top-level refresh + re-resolve caller
-		// identity for the new profile.
-		return m, tea.Batch(
-			refreshTopLevelCmd(m.awsCtx, m.db, m.memory),
-			resolveAccountCmd(m.awsCtx),
-		)
+		// Re-resolve caller identity for the new profile. We do NOT
+		// fire a top-level refresh — the user is responsible for
+		// preloading the new context (or letting the service-scope
+		// path lazy-load it).
+		return m, resolveAccountCmd(m.awsCtx)
 
 	case msgSpinTick:
 		m.spinTick++
