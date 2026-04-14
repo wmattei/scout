@@ -2,9 +2,12 @@ package tui
 
 import (
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
+	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
@@ -29,15 +32,30 @@ type Model struct {
 	toast    Toast
 	mode     Mode
 
+	// In-flight async action — blocks further input until msgActionDone.
+	inFlight      bool
+	inFlightLabel string
+
 	// Search-mode state.
 	selected      int
 	results       []search.Result
-	scopedResults []search.Result // populated in scoped mode from cache + live
-	scopedQuery   string          // the input value that produced scopedResults
+	scopedResults []search.Result
+	scopedQuery   string
 
 	// Details-mode state.
 	detailsResource core.Resource
 	actionSel       int
+	// taskDefDetails caches the result of DescribeFamily (or equivalent)
+	// for any task-def family whose Details view has been opened. Keyed
+	// by family name. A present-but-nil entry means "resolution in
+	// flight"; a missing entry means "not yet requested".
+	taskDefDetails map[string]*awsecs.TaskDefDetails
+
+	// Tail-logs-mode state.
+	tailGroup    string              // log group name currently being tailed
+	tailLines    []string            // already-formatted lines in the scrollback
+	tailStream   *awslogs.TailStream // cancellable stream handle
+	tailViewport viewport.Model      // scrolling log viewport
 
 	// Unused in Phase 2; reserved for Phase 4's refresh progress tracking.
 	lastTopLevel []core.Resource
@@ -52,14 +70,16 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 	ti.CharLimit = 512
 
 	return Model{
-		memory:   memory,
-		db:       db,
-		awsCtx:   awsCtx,
-		activity: activity,
-		input:    ti,
-		width:    80,
-		height:   24,
-		mode:     modeSearch,
+		memory:         memory,
+		db:             db,
+		awsCtx:         awsCtx,
+		activity:       activity,
+		input:          ti,
+		width:          80,
+		height:         24,
+		mode:           modeSearch,
+		taskDefDetails: make(map[string]*awsecs.TaskDefDetails),
+		tailViewport:   viewport.New(80, 10),
 	}
 }
 

@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
+	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
@@ -40,9 +43,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.width < 60 && msg.String() != "ctrl+c" {
 			return m, nil
 		}
+		if m.inFlight && msg.String() != "ctrl+c" {
+			// Block every other action while an async action is running;
+			// Ctrl+C always aborts the program regardless.
+			return m, nil
+		}
 		switch m.mode {
 		case modeDetails:
 			return m.updateDetails(msg)
+		case modeTailLogs:
+			return m.updateTail(msg)
 		default:
 			return m.updateSearch(msg)
 		}
@@ -65,6 +75,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scopedResults = msg.results
 		m.scopedQuery = msg.query
 		m.clampSelected()
+		return m, nil
+
+	case msgActionDone:
+		m.inFlight = false
+		m.inFlightLabel = ""
+		m.toast = newToast(msg.toast, 4*time.Second)
+		return m, nil
+
+	case msgTaskDefResolved:
+		if msg.err != nil {
+			// Phase 4 will surface this as an error toast.
+			return m, nil
+		}
+		if m.taskDefDetails == nil {
+			m.taskDefDetails = make(map[string]*awsecs.TaskDefDetails)
+		}
+		m.taskDefDetails[msg.family] = msg.details
+		return m, nil
+
+	case msgTailStarted:
+		if msg.err != nil {
+			m.inFlight = false
+			m.inFlightLabel = ""
+			m.mode = modeSearch
+			m.toast = newToast("tail start failed: "+msg.err.Error(), 4*time.Second)
+			return m, nil
+		}
+		m.tailStream = msg.stream
+		m.inFlight = false
+		m.inFlightLabel = ""
+		m.toast = newToast("tailing "+m.tailGroup, 2*time.Second)
+		return m, tailLogsNextCmd(msg.stream)
+
+	case msgTailEvent:
+		if msg.eof {
+			m.tailStream = nil
+			if msg.err != nil {
+				m.toast = newToast("tail ended: "+msg.err.Error(), 4*time.Second)
+			}
+			return m, nil
+		}
+		line := formatTailLine(msg.ev)
+		m.tailLines = append(m.tailLines, line)
+		if len(m.tailLines) > 2000 {
+			// Soft cap on scrollback to keep memory bounded.
+			m.tailLines = m.tailLines[len(m.tailLines)-2000:]
+		}
+		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
+		m.tailViewport.GotoBottom()
+		if m.tailStream != nil {
+			return m, tailLogsNextCmd(m.tailStream)
+		}
 		return m, nil
 
 	case msgAccount:
@@ -102,7 +164,6 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
-		// Enter the Details view for the currently selected row.
 		visible := m.visibleSearchResults()
 		if len(visible) == 0 {
 			return m, nil
@@ -113,6 +174,28 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsResource = visible[m.selected].Resource
 		m.actionSel = 0
 		m.mode = modeDetails
+		// Lazily resolve task-definition details (latest revision +
+		// log groups) so the Details view can show them and the
+		// Tail Logs action has what it needs. Both ECS task-def
+		// families (family == resource key) and ECS services (family
+		// from Meta["taskDefFamily"], populated by the Task-17
+		// services adapter extension) trigger this.
+		family := ""
+		switch m.detailsResource.Type {
+		case core.RTypeEcsTaskDefFamily:
+			family = m.detailsResource.Key
+		case core.RTypeEcsService:
+			family = m.detailsResource.Meta["taskDefFamily"]
+		}
+		if family != "" {
+			if _, ok := m.taskDefDetails[family]; !ok {
+				// Mark as "in flight" with a nil value so the details
+				// view can show "…resolving" instead of treating the
+				// missing key as "not yet requested".
+				m.taskDefDetails[family] = nil
+				return m, resolveTaskDefCmd(m.awsCtx, family)
+			}
+		}
 		return m, nil
 	case "tab":
 		return m.handleTab()
@@ -148,11 +231,7 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
-		if len(actions) == 0 {
-			return m, nil
-		}
-		m.toast = newToast("not yet implemented — Phase 3", 3*time.Second)
-		return m, nil
+		return m.runAction(actions, m.actionSel)
 	}
 	// Number hotkeys 1..9 for direct selection + execution.
 	if len(msg.Runes) == 1 {
@@ -161,8 +240,7 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			idx := int(r - '1')
 			if idx < len(actions) {
 				m.actionSel = idx
-				m.toast = newToast("not yet implemented — Phase 3", 3*time.Second)
-				return m, nil
+				return m.runAction(actions, idx)
 			}
 		}
 	}
@@ -285,4 +363,53 @@ func computeResults(query string, mem *index.Memory) []search.Result {
 // spinTickCmd schedules the next spinner frame.
 func spinTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return msgSpinTick{} })
+}
+
+// runAction dispatches the selected action via its Execute closure. If
+// Execute is nil (not yet implemented), it falls back to the original
+// stub toast so Phase 3 can migrate actions one at a time without
+// breaking the UI.
+func (m Model) runAction(actions []Action, idx int) (tea.Model, tea.Cmd) {
+	if idx < 0 || idx >= len(actions) {
+		return m, nil
+	}
+	a := actions[idx]
+	if a.Execute == nil {
+		m.toast = newToast("not yet implemented — Phase 3", 3*time.Second)
+		return m, nil
+	}
+	return a.Execute(m)
+}
+
+// formatTailLine renders a single tail event into a display line with a
+// local-time timestamp prefix.
+func formatTailLine(ev awslogs.TailEvent) string {
+	ts := time.Unix(0, ev.Timestamp*int64(time.Millisecond)).Local().Format("15:04:05.000")
+	return ts + " " + ev.Message
+}
+
+// updateTail handles key events while in modeTailLogs. Esc stops the
+// stream and returns to the Details view; Ctrl+C quits the program. All
+// other keys are forwarded to the viewport so the user can scroll.
+func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		if m.tailStream != nil {
+			m.tailStream.Close()
+			m.tailStream = nil
+		}
+		return m, tea.Quit
+	case "esc":
+		if m.tailStream != nil {
+			m.tailStream.Close()
+			m.tailStream = nil
+		}
+		m.mode = modeDetails
+		m.toast = newToast("stopped tailing", 2*time.Second)
+		return m, nil
+	}
+	// Forward scroll keys to the viewport.
+	var cmd tea.Cmd
+	m.tailViewport, cmd = m.tailViewport.Update(msg)
+	return m, cmd
 }

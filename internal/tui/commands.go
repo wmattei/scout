@@ -8,6 +8,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
+	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
@@ -157,4 +158,69 @@ func mergeByKey(a, b []core.Resource) []core.Resource {
 		out = append(out, r)
 	}
 	return out
+}
+
+// msgTaskDefResolved carries the result of a DescribeFamily call for the
+// given family. The handler populates m.taskDefDetails[family] so the
+// Details view and action commands can read it.
+type msgTaskDefResolved struct {
+	family  string
+	details *awsecs.TaskDefDetails
+	err     error
+}
+
+// resolveTaskDefCmd kicks off a DescribeFamily call for the given family.
+// The handler for msgTaskDefResolved stores the result in
+// m.taskDefDetails so the Details view's ARN row and the Tail Logs
+// action can read it.
+func resolveTaskDefCmd(ac *awsctx.Context, family string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		d, err := awsecs.DescribeFamily(ctx, ac, family)
+		return msgTaskDefResolved{family: family, details: d, err: err}
+	}
+}
+
+// msgTailStarted marks a successful StartLiveTail call. The handler
+// stashes the stream on the model and schedules the first tailLogsNextCmd.
+type msgTailStarted struct {
+	stream *awslogs.TailStream
+	err    error
+}
+
+// msgTailEvent carries one streamed log event to the Update loop. An
+// event with Message=="" and Err!=nil means the stream terminated.
+type msgTailEvent struct {
+	ev  awslogs.TailEvent
+	err error
+	eof bool
+}
+
+// tailLogsStartCmd opens the StartLiveTail stream for the given log
+// group. The returned tea.Cmd emits msgTailStarted; the Update handler
+// stores the stream and schedules the first msgTailEvent pump.
+func tailLogsStartCmd(ac *awsctx.Context, group, account string) tea.Cmd {
+	return func() tea.Msg {
+		stream, err := awslogs.StartLiveTail(context.Background(), ac, group, account)
+		return msgTailStarted{stream: stream, err: err}
+	}
+}
+
+// tailLogsNextCmd blocks until the next event arrives on the stream,
+// then emits it as msgTailEvent. The handler schedules another
+// tailLogsNextCmd to keep the pump going. When the stream closes the
+// final message carries eof=true.
+func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case ev, ok := <-stream.Events:
+			if !ok {
+				return msgTailEvent{eof: true}
+			}
+			return msgTailEvent{ev: ev}
+		case err := <-stream.Err:
+			return msgTailEvent{err: err, eof: true}
+		}
+	}
 }
