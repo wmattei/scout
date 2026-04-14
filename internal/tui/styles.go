@@ -33,8 +33,13 @@ var (
 	styleTagEcs  = tagStyle("#AF5F00", "#FFAF5F")
 	styleTagTask = tagStyle("#AF8700", "#FFD75F")
 
-	// Status bar.
-	styleStatusBar = lipgloss.NewStyle().Padding(0, 1).Background(ac("#D0D0E0", "#1A1A2E")).Foreground(ac("#000000", "#D0D0D0"))
+	// Status bar. No .Padding(0, 1) here: renderStatus already wraps its
+	// content with explicit leading/trailing spaces to reach exactly
+	// `width` columns. Adding lipgloss Padding on top of that
+	// double-counted the margins, which made Width(width) wrap the
+	// overflow onto a second line and scrolled the input bar off the
+	// alt-screen during every refresh.
+	styleStatusBar = lipgloss.NewStyle().Background(ac("#D0D0E0", "#1A1A2E")).Foreground(ac("#000000", "#D0D0D0"))
 	styleSpinner   = lipgloss.NewStyle().Foreground(ac("#005F87", "#5FAFD7"))
 	styleError     = lipgloss.NewStyle().Bold(true).Foreground(ac("#870000", "#FF5F5F"))
 	styleDivider   = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
