@@ -7,8 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// View renders the full frame: input row, divider, result list, divider,
-// status row.
+// View renders the full frame. The input bar, dividers, and status bar
+// are shared across all modes; the middle zone is mode-specific.
 func (m Model) View() string {
 	// Minimum usable width check (per spec §7).
 	if m.width < 60 {
@@ -17,37 +17,73 @@ func (m Model) View() string {
 	}
 
 	input := m.input.View()
-	// Right-aligned glyph so the bar looks intentional.
 	inputLine := fmt.Sprintf("%s%s", padRight(input, m.width-3), " 🔍")
 
-	// Divider.
 	divider := styleDivider.Render(strings.Repeat("─", m.width))
 
-	// Status.
 	status := renderStatus(m.width, m.awsCtx.Profile, m.awsCtx.Region, m.account, m.activity.Snapshot(), m.spinTick)
 
-	// Result list height = terminal height - input(1) - divider(1) - divider(1) - status(1).
-	resultsHeight := m.height - 4
-	if resultsHeight < 1 {
-		resultsHeight = 1
+	bodyHeight := m.height - 4
+	if bodyHeight < 1 {
+		bodyHeight = 1
 	}
 
-	emptyMsg := "no results"
-	switch {
-	case m.input.Value() == "" && m.memory.Len() == 0:
-		emptyMsg = "cache is empty — fetching…"
-	case m.input.Value() == "":
-		emptyMsg = "start typing to search cached resources"
-	case len(m.results) == 0:
-		emptyMsg = fmt.Sprintf("no matches for %q", m.input.Value())
+	var body string
+	switch m.mode {
+	case modeDetails:
+		body = renderDetails(m.detailsResource, m.actionSel, m.width)
+		body = padBlock(body, bodyHeight)
+	default:
+		body = m.renderSearchBody(bodyHeight)
 	}
-	results := renderResults(m.results, m.selected, m.width, resultsHeight, emptyMsg)
+
+	// Optional toast overlay replaces the status line with a centered box
+	// while the toast is active, keeping total height the same.
+	if m.toast.isActive() {
+		toastLine := renderToast(m.toast, m.width)
+		return strings.Join([]string{
+			inputLine,
+			divider,
+			body,
+			divider,
+			toastLine,
+		}, "\n")
+	}
 
 	return strings.Join([]string{
 		inputLine,
 		divider,
-		results,
+		body,
 		divider,
 		status,
 	}, "\n")
+}
+
+// renderSearchBody produces the middle zone for modeSearch — either the
+// top-level fuzzy list or the scoped prefix list, with the right empty
+// state when nothing is active.
+func (m Model) renderSearchBody(height int) string {
+	visible := m.visibleSearchResults()
+
+	emptyMsg := "no results"
+	inputValue := m.input.Value()
+	switch {
+	case inputValue == "" && m.memory.Len() == 0:
+		emptyMsg = "cache is empty — fetching…"
+	case inputValue == "":
+		emptyMsg = "start typing to search cached resources"
+	case len(visible) == 0:
+		emptyMsg = fmt.Sprintf("no matches for %q", inputValue)
+	}
+	return renderResults(visible, m.selected, m.width, height, emptyMsg)
+}
+
+// padBlock appends blank lines to `body` until it has exactly `height`
+// lines. If it already has more, it's returned unchanged.
+func padBlock(body string, height int) string {
+	lines := strings.Count(body, "\n") + 1
+	if lines >= height {
+		return body
+	}
+	return body + strings.Repeat("\n", height-lines)
 }
