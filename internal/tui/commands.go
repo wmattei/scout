@@ -49,14 +49,17 @@ func refreshTopLevelCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory) tea
 				return subtaskResult{core.RTypeEcsTaskDefFamily, rs, err}
 			},
 		}
+		var errs []string
 		for _, run := range subtasks {
 			res := run()
-			if res.err == nil {
-				persist(ctx, db, mem, res.typ, res.rs)
+			if res.err != nil {
+				errs = append(errs, res.err.Error())
+				continue
 			}
+			persist(ctx, db, mem, res.typ, res.rs)
 		}
 		cancel()
-		return msgResourcesUpdated{}
+		return msgResourcesUpdated{errors: errs}
 	}
 }
 
@@ -119,12 +122,12 @@ func scopedSearchCmd(ac *awsctx.Context, db *index.DB, query string) tea.Cmd {
 		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, livePrefix, MaxDisplayedResults)
 		if err != nil {
 			// On live failure, return whatever was in the cache so the
-			// UI still shows something. Phase 4's error toast will
-			// surface the error itself. search.Prefix both filters by
-			// the leaf and attaches the highlight span.
+			// UI still shows something and forward the error text so
+			// the Update handler can pop a toast.
 			return msgScopedResults{
 				query:   query,
 				results: search.Prefix(scope.Leaf, cached, MaxDisplayedResults),
+				err:     "scoped search failed: " + err.Error(),
 			}
 		}
 
