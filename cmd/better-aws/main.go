@@ -38,6 +38,15 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "preload" {
+		closeLog := debuglog.Init()
+		defer closeLog()
+		if err := runPreload(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "better-aws: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	closeLog := debuglog.Init()
 	defer closeLog()

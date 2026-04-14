@@ -99,11 +99,13 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 	}
 }
 
-// Init is called once when the program starts. Phase 1 left the initial
-// result list empty on purpose; Phase 2 preserves that behavior.
+// Init is called once when the program starts. The TUI no longer fires
+// a top-level refresh at launch — the cache is populated lazily by
+// service-scope first-entry fetches and explicitly by the
+// `better-aws preload <service>` subcommand. Init only kicks off the
+// spinner ticker and the one-shot caller-identity resolver here.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		refreshTopLevelCmd(m.awsCtx, m.db, m.memory),
 		spinTickCmd(),
 		resolveAccountCmd(m.awsCtx),
 	)
