@@ -72,6 +72,11 @@ func (m Model) renderSearchBody(height int) string {
 		emptyMsg = "cache is empty — fetching…"
 	case inputValue == "":
 		emptyMsg = "start typing to search cached resources"
+	case m.isLoadingScoped() && len(visible) == 0:
+		// Scoped search is in flight and we have nothing to show yet.
+		// Render a loading message with the spinner frame so the user
+		// knows the list is still being fetched, not genuinely empty.
+		emptyMsg = fmt.Sprintf("%s  loading %s", spinnerFrame(m.spinTick), inputValue)
 	case len(visible) == 0:
 		emptyMsg = fmt.Sprintf("no matches for %q", inputValue)
 	}

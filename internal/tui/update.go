@@ -222,14 +222,29 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Scoped mode: clear top-level results, trigger the scoped search.
+	// Scoped mode: clear top-level and any stale scoped state, then fire
+	// the scoped search. Clearing scopedQuery puts isLoadingScoped() into
+	// the loading state, which the view uses to show a loading message
+	// instead of a premature "no matches" error.
 	m.results = nil
+	m.scopedResults = nil
+	m.scopedQuery = ""
 	m.clampSelected()
 	scoped := scopedSearchCmd(m.awsCtx, m.db, m.input.Value())
 	if cmd != nil {
 		return m, tea.Batch(cmd, scoped)
 	}
 	return m, scoped
+}
+
+// isLoadingScoped reports whether a scoped search is currently in flight:
+// the input is scoped and the last completed scoped query does not match
+// what the user is currently looking at. The view uses this to render a
+// loading indicator instead of the "no matches" empty state while live
+// results are still coming back.
+func (m Model) isLoadingScoped() bool {
+	scope := search.ParseScope(m.input.Value())
+	return !scope.IsTopLevel() && m.scopedQuery != m.input.Value()
 }
 
 // visibleSearchResults returns whichever result list is currently active
