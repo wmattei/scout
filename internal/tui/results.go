@@ -24,8 +24,7 @@ import (
 // indicator, tag, spacing, and meta columns.
 func renderResults(results []search.Result, selected, width, height int, emptyMsg string) string {
 	if len(results) == 0 {
-		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
-			styleRowDim.Render(emptyMsg))
+		return centerEmptyState(width, height, emptyMsg)
 	}
 
 	const (
@@ -211,4 +210,49 @@ func padRight(s string, n int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", n-w)
+}
+
+// centerEmptyState returns a body exactly `height` lines tall with the
+// given message centered both vertically and horizontally. Used for all
+// empty-list states in the search view.
+//
+// This replaces an earlier lipgloss.Place call that could produce an
+// off-by-one line count when the message contained characters with
+// ambiguous display width (e.g. braille spinners), pushing the surrounding
+// frame out of alignment. Building the string by hand keeps line count
+// deterministic regardless of the content.
+func centerEmptyState(width, height int, msg string) string {
+	if height <= 0 {
+		return ""
+	}
+	styled := styleRowDim.Render(msg)
+	// lipgloss.Width handles ANSI escapes; use it to compute visible width.
+	msgWidth := lipgloss.Width(styled)
+	leftPad := (width - msgWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	line := strings.Repeat(" ", leftPad) + styled
+
+	// Split vertical padding: top gets the floor, bottom gets the rest so
+	// odd-height blocks lean one row toward the top (matches how list
+	// selectors usually look).
+	top := (height - 1) / 2
+	if top < 0 {
+		top = 0
+	}
+	bottom := height - 1 - top
+	if bottom < 0 {
+		bottom = 0
+	}
+
+	var b strings.Builder
+	for i := 0; i < top; i++ {
+		b.WriteString("\n")
+	}
+	b.WriteString(line)
+	for i := 0; i < bottom; i++ {
+		b.WriteString("\n")
+	}
+	return b.String()
 }
