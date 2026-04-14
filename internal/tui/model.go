@@ -10,8 +10,9 @@ import (
 	"github.com/wagnermattei/better-aws-cli/internal/search"
 )
 
-// Model is the bubbletea model for the search view. Phase 1 only has the
-// search mode — Phase 2 will introduce a Mode enum and additional sub-models.
+// Model is the bubbletea model for the search + details views. Phase 2
+// introduces a Mode split: modeSearch runs the input bar + result list,
+// modeDetails runs the Details panel + Actions list for a chosen row.
 type Model struct {
 	// Injected dependencies.
 	memory   *index.Memory
@@ -19,16 +20,26 @@ type Model struct {
 	awsCtx   *awsctx.Context
 	activity *awsctx.Activity
 
-	// UI state.
+	// Shared UI state.
 	input    textinput.Model
 	width    int
 	height   int
-	selected int
-	results  []search.Result
 	account  string
 	spinTick int
+	toast    Toast
+	mode     Mode
 
-	// Derived: the last snapshot we cached resources into memory from.
+	// Search-mode state.
+	selected      int
+	results       []search.Result
+	scopedResults []search.Result // populated in scoped mode from cache + live
+	scopedQuery   string          // the input value that produced scopedResults
+
+	// Details-mode state.
+	detailsResource core.Resource
+	actionSel       int
+
+	// Unused in Phase 2; reserved for Phase 4's refresh progress tracking.
 	lastTopLevel []core.Resource
 }
 
@@ -48,13 +59,12 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		input:    ti,
 		width:    80,
 		height:   24,
+		mode:     modeSearch,
 	}
 }
 
-// Init is called once when the program starts. Phase 1 starts with an empty
-// result list on purpose — the TUI shows a "start typing" hint until the
-// user enters a query. Background refresh and account resolution run
-// concurrently with the first render.
+// Init is called once when the program starts. Phase 1 left the initial
+// result list empty on purpose; Phase 2 preserves that behavior.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		refreshTopLevelCmd(m.awsCtx, m.db, m.memory),
