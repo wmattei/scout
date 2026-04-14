@@ -109,8 +109,13 @@ func scopedSearchCmd(ac *awsctx.Context, db *index.DB, query string) tea.Cmd {
 		// 1. Cache read — fast, authoritative for first paint.
 		cached, _ := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
 
-		// 2. Live ListObjectsV2 at the exact prefix.
-		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, scope.Prefix)
+		// 2. Live ListObjectsV2 at the narrowest prefix S3 can filter on.
+		// Concatenating Prefix+Leaf lets S3 do the filtering server-side
+		// (so typing narrows each request) and capping at
+		// MaxDisplayedResults keeps first-paint latency flat even for
+		// buckets with millions of keys.
+		livePrefix := scope.Prefix + scope.Leaf
+		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, livePrefix, MaxDisplayedResults)
 		if err != nil {
 			// On live failure, return whatever was in the cache so the
 			// UI still shows something. Phase 4's error toast will
