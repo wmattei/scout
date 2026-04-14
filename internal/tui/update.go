@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -368,12 +369,14 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Scoped mode: clear top-level and any stale scoped state, then fire
-	// the scoped search. Clearing scopedQuery puts isLoadingScoped() into
-	// the loading state, which the view uses to show a loading message
-	// instead of a premature "no matches" error.
+	// Scoped mode: read the SQLite cache synchronously for an instant
+	// first paint, then fire the live fetch as a tea.Cmd to augment
+	// and persist. Keeping scopedQuery empty so isLoadingScoped() stays
+	// true means the status bar keeps spinning until the live call
+	// returns — but the result list is already showing whatever we
+	// cached on prior visits, so there's no "loading" empty state.
 	m.results = nil
-	m.scopedResults = nil
+	m.scopedResults = readScopedCache(m.db, scope)
 	m.scopedQuery = ""
 	m.clampSelected()
 	scoped := scopedSearchCmd(m.awsCtx, m.db, m.input.Value())
@@ -381,6 +384,25 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, scoped)
 	}
 	return m, scoped
+}
+
+// readScopedCache does a synchronous SQLite read of bucket_contents for
+// the given scope and returns prefix-matched results ready to drop into
+// m.scopedResults. Used by recomputeResults to populate the scoped
+// result list instantly from prior visits while the async live fetch
+// runs in parallel. A brief timeout caps worst-case blocking on the
+// SQLite query so a pathological disk stall can't freeze the UI.
+func readScopedCache(db *index.DB, scope search.Scope) []search.Result {
+	if scope.Bucket == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	cached, err := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
+	if err != nil {
+		return nil
+	}
+	return search.Prefix(scope.Leaf, cached, MaxDisplayedResults)
 }
 
 // isLoadingScoped reports whether a scoped search is currently in flight:
