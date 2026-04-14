@@ -263,6 +263,16 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prevMode = modeSearch
 		m.mode = modeSwitcher
 		return m, nil
+	case "alt+backspace", "ctrl+w":
+		// Option+Backspace on macOS (and Ctrl+W on most other
+		// terminals) deletes the last path segment instead of the
+		// whole word. The default textinput behaviour is word-aware
+		// by spaces, which is useless for S3 breadcrumbs — roll our
+		// own that splits on "/" and drops everything past the
+		// penultimate slash.
+		m.input.SetValue(deleteLastPathSegment(m.input.Value()))
+		m.input.CursorEnd()
+		return m.recomputeResults(nil)
 	case "ctrl+r", "esc":
 		return m, nil
 	}
@@ -384,6 +394,37 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, scoped)
 	}
 	return m, scoped
+}
+
+// deleteLastPathSegment trims the trailing segment of a breadcrumb
+// input, treating "/" as the segment delimiter. Used by Option+Backspace
+// (alt+backspace) and Ctrl+W so the user can walk back up the S3 path
+// one level at a time instead of nuking the whole breadcrumb.
+//
+// Rules:
+//   - If the input is empty or has no "/", return empty (deletes
+//     everything; mirrors a normal word-delete at top level).
+//   - If the input ends with "/", the last segment is whatever comes
+//     between the previous "/" and the trailing one — drop it and
+//     keep the previous slash.
+//   - Otherwise the last segment is everything after the final "/";
+//     drop it and keep the slash.
+//
+// Examples:
+//
+//	"bucket/logs/2026/01/"    -> "bucket/logs/2026/"
+//	"bucket/logs/2026/01/fil" -> "bucket/logs/2026/01/"
+//	"bucket/"                 -> ""
+//	"bucket"                  -> ""
+//	""                        -> ""
+func deleteLastPathSegment(input string) string {
+	// Strip a single trailing slash so both "bucket/logs/" and
+	// "bucket/logs/abc" collapse by one segment, not the whole rest.
+	s := strings.TrimSuffix(input, "/")
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		return s[:i+1]
+	}
+	return ""
 }
 
 // readScopedCache does a synchronous SQLite read of bucket_contents for
