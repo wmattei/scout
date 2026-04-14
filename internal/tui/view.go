@@ -31,8 +31,10 @@ func (m Model) View() string {
 	var body string
 	switch m.mode {
 	case modeDetails:
-		body = renderDetails(m.detailsResource, m.actionSel, m.width)
+		body = renderDetails(m, m.width)
 		body = padBlock(body, bodyHeight)
+	case modeTailLogs:
+		body = renderTailLogs(m, bodyHeight)
 	default:
 		body = m.renderSearchBody(bodyHeight)
 	}
