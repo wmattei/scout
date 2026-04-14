@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -136,8 +137,9 @@ func renderNameWithHighlights(name string, matchIdx []int, maxWidth int) string 
 	return b.String()
 }
 
-// renderMeta produces the right-aligned meta column for a resource. Phase 1
-// shows region for buckets and cluster name for ecs services. Task def
+// renderMeta produces the right-aligned meta column for a resource.
+// Phase 1 shows region for buckets and cluster name for ecs services.
+// Phase 2 adds mtime for folders and size + mtime for objects. Task def
 // families have no meta yet.
 func renderMeta(r core.Resource) string {
 	switch r.Type {
@@ -145,9 +147,60 @@ func renderMeta(r core.Resource) string {
 		return styleRowDim.Render(r.Meta["region"])
 	case core.RTypeEcsService:
 		return styleRowDim.Render(r.Meta["cluster"])
+	case core.RTypeFolder:
+		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+			return styleRowDim.Render(formatUnixTime(ts))
+		}
+		return ""
+	case core.RTypeObject:
+		var parts []string
+		if s, ok := r.Meta["size"]; ok && s != "" {
+			parts = append(parts, formatBytes(s))
+		}
+		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+			parts = append(parts, formatUnixTime(ts))
+		}
+		return styleRowDim.Render(strings.Join(parts, "  "))
 	default:
 		return ""
 	}
+}
+
+// formatBytes turns a decimal byte-count string into a human-readable
+// suffix ("12.4 MB"). Empty or unparseable input returns "".
+func formatBytes(s string) string {
+	var n int64
+	_, err := fmt.Sscanf(s, "%d", &n)
+	if err != nil || n < 0 {
+		return ""
+	}
+	const (
+		kib = 1024
+		mib = kib * 1024
+		gib = mib * 1024
+	)
+	switch {
+	case n >= gib:
+		return fmt.Sprintf("%.1f GB", float64(n)/float64(gib))
+	case n >= mib:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(mib))
+	case n >= kib:
+		return fmt.Sprintf("%.1f KB", float64(n)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// formatUnixTime turns a decimal Unix seconds string into a short
+// "YYYY-MM-DD HH:MM" timestamp in the local timezone. Empty or
+// unparseable input returns "".
+func formatUnixTime(s string) string {
+	var n int64
+	_, err := fmt.Sscanf(s, "%d", &n)
+	if err != nil || n <= 0 {
+		return ""
+	}
+	return time.Unix(n, 0).Local().Format("2006-01-02 15:04")
 }
 
 // padRight pads s with spaces on the right so its visual width equals n.
