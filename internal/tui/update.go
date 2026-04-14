@@ -179,6 +179,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scopedQuery = ""
 		m.selected = 0
 		m.taskDefDetails = make(map[string]*awsecs.TaskDefDetails)
+		m.serviceScopeFetched = make(map[string]struct{})
 		m.account = ""
 		// Close the switcher overlay.
 		m.switcher.Hide()
@@ -370,6 +371,29 @@ func (m Model) handleTab() (tea.Model, tea.Cmd) {
 // by the text-input update (or nil if none).
 func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	scope := search.ParseScope(m.input.Value())
+
+	// Service-scope mode ("s3:", "ecs:", "td:" etc.) — fuzzy-match the
+	// query-after-the-colon against the in-memory index restricted to
+	// the matching resource type. First time the session sees a given
+	// alias, fire a live fetch for just that type so the user gets a
+	// fresh list of up to MaxDisplayedResults items; subsequent
+	// keystrokes under the same alias just re-filter the in-memory
+	// index with no AWS call.
+	if scope.HasService {
+		m.results = search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults)
+		m.scopedResults = nil
+		m.scopedQuery = ""
+		m.clampSelected()
+		if _, already := m.serviceScopeFetched[scope.ServiceAlias]; already {
+			return m, cmd
+		}
+		m.serviceScopeFetched[scope.ServiceAlias] = struct{}{}
+		refresh := refreshServiceCmd(m.awsCtx, m.db, m.memory, scope.Service)
+		if cmd != nil {
+			return m, tea.Batch(cmd, refresh)
+		}
+		return m, refresh
+	}
 
 	if scope.IsTopLevel() {
 		m.results = computeResults(m.input.Value(), m.memory)

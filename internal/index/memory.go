@@ -65,6 +65,26 @@ func (m *Memory) DeleteMissing(t core.ResourceType, keep map[string]struct{}) {
 	}
 }
 
+// ByType returns a snapshot slice of every top-level resource matching
+// the given type. Used by the service-scope search feature to restrict
+// fuzzy matching to a single resource type without touching All(). The
+// result is sorted lexicographically by DisplayName for deterministic
+// ordering.
+func (m *Memory) ByType(t core.ResourceType) []core.Resource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]core.Resource, 0)
+	for _, r := range m.byTypeKey {
+		if r.Type == t {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].DisplayName < out[j].DisplayName
+	})
+	return out
+}
+
 // Len returns the number of top-level resources currently held. Used by
 // the TUI to distinguish "cache genuinely empty" from "user hasn't typed
 // yet" for the empty-state message.
