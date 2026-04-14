@@ -18,6 +18,10 @@ const (
 	// modeTailLogs shows the full-screen streaming log viewport backed
 	// by CloudWatch Logs Live Tail.
 	modeTailLogs
+
+	// modeSwitcher shows the profile/region overlay. Key events are
+	// routed to updateSwitcher; Esc restores the previous mode.
+	modeSwitcher
 )
 
 // String returns a short debug name for the mode.
@@ -29,6 +33,8 @@ func (m Mode) String() string {
 		return "details"
 	case modeTailLogs:
 		return "tail-logs"
+	case modeSwitcher:
+		return "switcher"
 	default:
 		return "unknown"
 	}
