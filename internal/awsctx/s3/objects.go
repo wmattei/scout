@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -105,4 +106,12 @@ func lastSegment(s string) string {
 		return s[i+1:]
 	}
 	return s
+}
+
+// formatUnixTimeFmt renders a Unix-second timestamp into the same
+// "YYYY-MM-DD HH:MM" shape used by the TUI's results view. Lives
+// here rather than in the TUI so providers can reuse it without
+// pulling in the tui package.
+func formatUnixTimeFmt(n int64) string {
+	return time.Unix(n, 0).Local().Format("2006-01-02 15:04")
 }
