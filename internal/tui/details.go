@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // renderDetails produces the full Details screen for the current
@@ -42,13 +43,9 @@ func renderDetails(m Model, width int) string {
 	writeField(&b, "Name", r.DisplayName)
 	writeField(&b, "ARN", detailsARN(r, m))
 
-	// Log group row when we've resolved task-def details and at least
-	// one log group is configured. Uses the same family-lookup logic as
-	// the Tail Logs action so services and task-def families share the
-	// same row.
-	if family := taskDefFamilyForDetails(m); family != "" {
-		if d, ok := m.taskDefDetails[family]; ok && d != nil && len(d.LogGroups) > 0 {
-			writeField(&b, "Log", d.LogGroups[0])
+	if p, ok := services.Get(r.Type); ok {
+		if group := p.LogGroup(r, m.lazyDetailsFor(r)); group != "" {
+			writeField(&b, "Log", group)
 		}
 	}
 	b.WriteString("\n")
@@ -80,21 +77,30 @@ func renderDetails(m Model, width int) string {
 	return b.String()
 }
 
-// detailsARN resolves the ARN shown in the Details view. For task-def
-// families it returns the lazily-resolved revision ARN if available;
-// otherwise it falls back to "…resolving" or the family pseudo-ARN.
+// detailsARN resolves the ARN shown in the Details view. It checks the
+// generic lazy-details store keyed by (type, resource key): if
+// resolution is in-flight it shows "…resolving"; if resolved it returns
+// the familyArn from the map (if present); otherwise it falls back to
+// the provider's ARN and then to core.Resource.ARN().
 func detailsARN(r core.Resource, m Model) string {
-	if r.Type != core.RTypeEcsTaskDefFamily {
-		return r.ARN()
-	}
-	d, ok := m.taskDefDetails[r.Key]
-	if !ok {
-		return r.ARN()
-	}
-	if d == nil {
+	key := lazyDetailKey{Type: r.Type, Key: r.Key}
+	state := m.lazyDetailsState[key]
+	switch state {
+	case lazyStateInFlight:
 		return "…resolving"
+	case lazyStateResolved:
+		if lazy := m.lazyDetails[key]; lazy != nil {
+			if a := lazy["familyArn"]; a != "" {
+				return a
+			}
+		}
 	}
-	return d.ARN
+	if p, ok := services.Get(r.Type); ok {
+		if a := p.ARN(r); a != "" {
+			return a
+		}
+	}
+	return r.ARN()
 }
 
 // writeField appends a single "  Label    Value" row to b.

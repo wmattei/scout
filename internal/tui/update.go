@@ -8,11 +8,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
 	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // Custom messages emitted by commands.
@@ -110,15 +110,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case msgTaskDefResolved:
+	case msgLazyDetailsResolved:
 		if msg.err != nil {
-			m.toast = newErrorToast("describe task def failed: " + msg.err.Error())
+			m.lazyDetailsState[msg.key] = lazyStateResolved
+			m.toast = newErrorToast("resolve details failed: " + msg.err.Error())
 			return m, nil
 		}
-		if m.taskDefDetails == nil {
-			m.taskDefDetails = make(map[string]*awsecs.TaskDefDetails)
+		if m.lazyDetails == nil {
+			m.lazyDetails = make(map[lazyDetailKey]map[string]string)
 		}
-		m.taskDefDetails[msg.family] = msg.details
+		m.lazyDetails[msg.key] = msg.details
+		m.lazyDetailsState[msg.key] = lazyStateResolved
 		return m, nil
 
 	case msgTailStarted:
@@ -186,7 +188,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scopedResults = nil
 		m.scopedQuery = ""
 		m.selected = 0
-		m.taskDefDetails = make(map[string]*awsecs.TaskDefDetails)
+		m.lazyDetails = make(map[lazyDetailKey]map[string]string)
+		m.lazyDetailsState = make(map[lazyDetailKey]lazyDetailState)
 		m.serviceScopeFetched = make(map[string]struct{})
 		m.account = ""
 		// Close the switcher overlay.
@@ -240,26 +243,15 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsResource = visible[m.selected].Resource
 		m.actionSel = 0
 		m.mode = modeDetails
-		// Lazily resolve task-definition details (latest revision +
-		// log groups) so the Details view can show them and the
-		// Tail Logs action has what it needs. Both ECS task-def
-		// families (family == resource key) and ECS services (family
-		// from Meta["taskDefFamily"], populated by the Task-17
-		// services adapter extension) trigger this.
-		family := ""
-		switch m.detailsResource.Type {
-		case core.RTypeEcsTaskDefFamily:
-			family = m.detailsResource.Key
-		case core.RTypeEcsService:
-			family = m.detailsResource.Meta["taskDefFamily"]
-		}
-		if family != "" {
-			if _, ok := m.taskDefDetails[family]; !ok {
-				// Mark as "in flight" with a nil value so the details
-				// view can show "…resolving" instead of treating the
-				// missing key as "not yet requested".
-				m.taskDefDetails[family] = nil
-				return m, resolveTaskDefCmd(m.awsCtx, family)
+		// Generic lazy-detail resolution. Every provider that has a
+		// non-trivial ResolveDetails participates — the message
+		// handler stores the result in m.lazyDetails keyed by
+		// (type, resource key).
+		key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+		if m.lazyDetailsState[key] == lazyStateNone {
+			if p, ok := services.Get(m.detailsResource.Type); ok {
+				m.lazyDetailsState[key] = lazyStateInFlight
+				return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
 			}
 		}
 		return m, nil
