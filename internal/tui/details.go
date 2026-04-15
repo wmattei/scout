@@ -108,26 +108,21 @@ func renderDetails(m Model, width int) string {
 	return b.String()
 }
 
-// detailsARN resolves the ARN shown in the Details view. It checks the
-// generic lazy-details store keyed by (type, resource key): if
-// resolution is in-flight it shows "…resolving"; if resolved it returns
-// the familyArn from the map (if present); otherwise it falls back to
-// the provider's ARN and then to core.Resource.ARN().
+// detailsARN resolves the ARN shown in the Details view. While
+// resolution is in-flight it shows "…resolving"; otherwise it
+// delegates to the provider's ARN method with the lazy map so each
+// provider decides what ARN is authoritative for its type
+// (service ARN for ECS services, revision ARN for task-def families,
+// etc.). Falls back to core.Resource.ARN() when no provider is
+// registered.
 func detailsARN(r core.Resource, m Model) string {
 	key := lazyDetailKey{Type: r.Type, Key: r.Key}
-	state := m.lazyDetailsState[key]
-	switch state {
-	case lazyStateInFlight:
+	if m.lazyDetailsState[key] == lazyStateInFlight {
 		return "…resolving"
-	case lazyStateResolved:
-		if lazy := m.lazyDetails[key]; lazy != nil {
-			if a := lazy["familyArn"]; a != "" {
-				return a
-			}
-		}
 	}
+	lazy := m.lazyDetailsFor(r)
 	if p, ok := services.Get(r.Type); ok {
-		if a := p.ARN(r); a != "" {
+		if a := p.ARN(r, lazy); a != "" {
 			return a
 		}
 	}

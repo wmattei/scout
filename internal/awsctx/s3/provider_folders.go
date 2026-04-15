@@ -38,7 +38,7 @@ func (folderProvider) TagStyle() lipgloss.Style {
 func (folderProvider) SortPriority() int { return 100 }
 func (folderProvider) IsTopLevel() bool  { return false }
 
-func (folderProvider) ARN(r core.Resource) string {
+func (folderProvider) ARN(r core.Resource, _ map[string]string) string {
 	return fmt.Sprintf("arn:aws:s3:::%s/%s", r.Meta["bucket"], r.Key)
 }
 

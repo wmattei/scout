@@ -41,11 +41,14 @@ func (ecsTaskDefProvider) IsTopLevel() bool  { return true }
 // ARN returns the resolved revision ARN if available in the lazy
 // map, otherwise a wildcard family-only pseudo-ARN. The Details
 // view renders "…resolving" while the lazy lookup is in flight; by
-// the time Copy ARN runs, the lazy map is populated.
-func (p ecsTaskDefProvider) ARN(r core.Resource) string {
-	// Without lazy access, fall back to the family-only pseudo-ARN.
-	// The TUI's Copy ARN path goes through services.Get + lazy map
-	// in a wrapper, so this fallback rarely fires.
+// the time Copy ARN runs, the lazy map is populated and we return
+// the real revision ARN.
+func (p ecsTaskDefProvider) ARN(r core.Resource, lazy map[string]string) string {
+	if lazy != nil {
+		if arn := lazy["familyArn"]; arn != "" {
+			return arn
+		}
+	}
 	return fmt.Sprintf("arn:aws:ecs:*:*:task-definition/%s", r.Key)
 }
 

@@ -38,7 +38,7 @@ func (bucketProvider) TagStyle() lipgloss.Style {
 func (bucketProvider) SortPriority() int { return 0 }
 func (bucketProvider) IsTopLevel() bool  { return true }
 
-func (bucketProvider) ARN(r core.Resource) string {
+func (bucketProvider) ARN(r core.Resource, _ map[string]string) string {
 	return fmt.Sprintf("arn:aws:s3:::%s", r.Key)
 }
 

@@ -40,7 +40,11 @@ func (ecsServiceProvider) TagStyle() lipgloss.Style {
 func (ecsServiceProvider) SortPriority() int { return 1 }
 func (ecsServiceProvider) IsTopLevel() bool  { return true }
 
-func (ecsServiceProvider) ARN(r core.Resource) string {
+func (ecsServiceProvider) ARN(r core.Resource, _ map[string]string) string {
+	// r.Key is the full service ARN — that's what we want to show
+	// regardless of what lazyDetails happens to carry. The task-def
+	// family ARN (from DescribeFamily) is a separate row in
+	// DetailRows, not the service ARN.
 	return r.Key
 }
 
