@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
@@ -342,22 +341,9 @@ func (m Model) handleTab() (tea.Model, tea.Cmd) {
 	row := visible[m.selected].Resource
 
 	scope := search.ParseScope(m.input.Value())
-	var newInput string
-	switch row.Type {
-	case core.RTypeBucket:
-		newInput = row.Key + "/"
-	case core.RTypeFolder:
-		// row.Key is the full relative key under the bucket
-		// (e.g. "logs/2026/"). Reconstruct "bucket/logs/2026/".
-		newInput = scope.Bucket + "/" + row.Key
-	case core.RTypeObject:
-		// Object keys don't get a trailing slash.
-		newInput = scope.Bucket + "/" + row.Key
-	default:
-		// Top-level leaves (ECS service, ECS task-def family) — replace
-		// the input with the display name so subsequent text matches the
-		// current selection.
-		newInput = row.DisplayName
+	newInput := row.DisplayName
+	if p, ok := services.Get(row.Type); ok {
+		newInput = p.TabComplete(scope, row)
 	}
 	m.input.SetValue(newInput)
 	m.input.CursorEnd()
