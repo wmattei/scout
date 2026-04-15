@@ -1,25 +1,25 @@
 package tui
 
 import (
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // execCopyURI copies a resource URI to the clipboard. Only S3 resources
 // have URIs (s3://bucket/key). Other types show an informational toast.
 func execCopyURI(m Model) (Model, tea.Cmd) {
 	r := m.detailsResource
-	var uri string
-	switch r.Type {
-	case core.RTypeBucket:
-		uri = fmt.Sprintf("s3://%s", r.Key)
-	case core.RTypeFolder, core.RTypeObject:
-		uri = fmt.Sprintf("s3://%s/%s", r.Meta["bucket"], r.Key)
-	default:
+	p, ok := services.Get(r.Type)
+	if !ok {
+		m.toast = newToast("no URI for this resource type", 3*time.Second)
+		return m, nil
+	}
+	uri, supported := p.URI(r)
+	if !supported {
 		m.toast = newToast("no URI for this resource type", 3*time.Second)
 		return m, nil
 	}
@@ -31,18 +31,12 @@ func execCopyURI(m Model) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// execCopyARN copies the resource ARN to the clipboard. ARNs come from
-// Resource.ARN(), which handles every type in the current set. Task-def
-// families rely on lazy resolution — if taskDefDetails has the revision
-// ARN, use that; otherwise fall back to the family-only pseudo-ARN.
+// execCopyARN copies the resource ARN to the clipboard. Goes through
+// arnForDetails so the lazy-resolved revision ARN is preferred over the
+// family pseudo-ARN when available.
 func execCopyARN(m Model) (Model, tea.Cmd) {
 	r := m.detailsResource
-	arn := r.ARN()
-	if r.Type == core.RTypeEcsTaskDefFamily {
-		if d, ok := m.taskDefDetails[r.Key]; ok && d != nil && d.ARN != "" {
-			arn = d.ARN
-		}
-	}
+	arn := arnForDetails(r, m)
 	if arn == "" {
 		m.toast = newToast("no ARN for this resource", 3*time.Second)
 		return m, nil
@@ -53,4 +47,23 @@ func execCopyARN(m Model) (Model, tea.Cmd) {
 	}
 	m.toast = newToast("ARN copied: "+arn, 3*time.Second)
 	return m, nil
+}
+
+// arnForDetails returns the best ARN we can show for the given
+// resource: the lazy-resolved revision ARN if available, otherwise
+// the provider's default ARN, otherwise the core.Resource.ARN()
+// fallback. The TUI's other ARN consumers (Details panel) go through
+// the same helper.
+func arnForDetails(r core.Resource, m Model) string {
+	if lazy := m.lazyDetailsFor(r); lazy != nil {
+		if a := lazy["familyArn"]; a != "" {
+			return a
+		}
+	}
+	if p, ok := services.Get(r.Type); ok {
+		if a := p.ARN(r); a != "" {
+			return a
+		}
+	}
+	return r.ARN()
 }

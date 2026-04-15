@@ -13,6 +13,7 @@ import (
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // refreshServiceCmd fires a live fetch for a single resource type,
@@ -136,25 +137,30 @@ func mergeByKey(a, b []core.Resource) []core.Resource {
 	return out
 }
 
-// msgTaskDefResolved carries the result of a DescribeFamily call for the
-// given family. The handler populates m.taskDefDetails[family] so the
-// Details view and action commands can read it.
-type msgTaskDefResolved struct {
-	family  string
-	details *awsecs.TaskDefDetails
+// msgLazyDetailsResolved carries the result of a generic lazy-detail
+// resolution started from the Enter handler. The handler stores the
+// returned map in m.lazyDetails keyed by msg.key.
+type msgLazyDetailsResolved struct {
+	key     lazyDetailKey
+	details map[string]string
 	err     error
 }
 
-// resolveTaskDefCmd kicks off a DescribeFamily call for the given family.
-// The handler for msgTaskDefResolved stores the result in
-// m.taskDefDetails so the Details view's ARN row and the Tail Logs
-// action can read it.
-func resolveTaskDefCmd(ac *awsctx.Context, family string) tea.Cmd {
+// resolveLazyDetailsCmd dispatches a provider's ResolveDetails as a
+// tea.Cmd. The caller is responsible for marking
+// m.lazyDetailsState[key] = lazyStateInFlight before returning this
+// command from Update — the message handler flips it to
+// lazyStateResolved on completion.
+func resolveLazyDetailsCmd(ac *awsctx.Context, p services.Provider, r core.Resource) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		d, err := awsecs.DescribeFamily(ctx, ac, family)
-		return msgTaskDefResolved{family: family, details: d, err: err}
+		details, err := p.ResolveDetails(ctx, ac, r)
+		return msgLazyDetailsResolved{
+			key:     lazyDetailKey{Type: r.Type, Key: r.Key},
+			details: details,
+			err:     err,
+		}
 	}
 }
 
