@@ -21,8 +21,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 	"github.com/wagnermattei/better-aws-cli/internal/tui"
 
 	// Provider registrations — blank imports trigger each package's
@@ -89,6 +91,20 @@ func runTUI() (err error) {
 
 	activity := awsctx.NewActivity()
 	activity.Attach(&awsCtx.Cfg)
+
+	// Tell the index layer which types are top-level so it can
+	// build the unified search snapshot. The data lives on the
+	// services registry; we copy it here once so internal/index
+	// doesn't need to import internal/services and create a cycle.
+	{
+		types := make([]core.ResourceType, 0)
+		priority := make(map[core.ResourceType]int)
+		for _, p := range services.TopLevel() {
+			types = append(types, p.Type())
+			priority[p.Type()] = p.SortPriority()
+		}
+		index.SetTopLevelTypes(types, priority)
+	}
 
 	db, err := index.Open(awsCtx.Profile, awsCtx.Region)
 	if err != nil {
