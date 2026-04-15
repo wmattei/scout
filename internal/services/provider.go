@@ -116,6 +116,33 @@ type Provider interface {
 	// "" when no log group is configured (the action shows an
 	// informational toast).
 	LogGroup(r core.Resource, lazy map[string]string) string
+
+	// AlwaysRefresh reports whether the Details Enter handler should
+	// fire ResolveDetails on every entry (ignoring any existing
+	// resolved state), or stick with the default "resolve once per
+	// session" cache. Types that show live AWS state — the ECS
+	// service details page in particular — return true so the user
+	// sees fresh running counts and deployment status every time
+	// they open Details.
+	AlwaysRefresh() bool
+
+	// DetailRows returns the ordered list of label/value rows to
+	// render in the Details panel under the shared Name + ARN
+	// block. `lazy` is the map ResolveDetails populated; providers
+	// that don't render any extra rows should return nil.
+	// Return nil AND the in-flight state signals the view to render
+	// a centered "resolving details…" placeholder.
+	DetailRows(r core.Resource, lazy map[string]string) []DetailRow
+}
+
+// DetailRow is one row in the Details panel's scrollable body.
+// Label is rendered dim at a fixed column width; Value is rendered
+// as-is (providers may embed lipgloss styling for color-coded
+// health signals). An empty Label with a non-empty Value renders as
+// a section header; both empty inserts a blank spacer row.
+type DetailRow struct {
+	Label string
+	Value string
 }
 
 // BaseProvider is an embeddable zero-default that gives providers
@@ -141,3 +168,9 @@ func (BaseProvider) ResolveDetails(context.Context, *awsctx.Context, core.Resour
 }
 
 func (BaseProvider) LogGroup(core.Resource, map[string]string) string { return "" }
+
+func (BaseProvider) AlwaysRefresh() bool { return false }
+
+func (BaseProvider) DetailRows(core.Resource, map[string]string) []DetailRow {
+	return nil
+}

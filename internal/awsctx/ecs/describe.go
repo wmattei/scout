@@ -3,12 +3,133 @@ package ecs
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 )
+
+// ServiceDetails is the slice of DescribeServices output fields that
+// the TUI Details view actually renders. Assembled by DescribeService
+// and stored in the provider's lazyDetails map via JSON encoding.
+type ServiceDetails struct {
+	Status          string    // ACTIVE, DRAINING, INACTIVE
+	DesiredCount    int32
+	RunningCount    int32
+	PendingCount    int32
+	LaunchType      string
+	PlatformVersion string
+	TaskDefinition  string    // full ARN of the currently-deployed revision
+	CreatedAt       time.Time // service creation time (zero if unset)
+	UpdatedAt       time.Time // last service update time (zero if unset)
+
+	// Primary deployment info. ECS returns a list of deployments but
+	// we only surface the PRIMARY (active rolling deploy) one.
+	DeploymentRolloutState       string // IN_PROGRESS, COMPLETED, FAILED, or ""
+	DeploymentRolloutStateReason string
+
+	// Deployment circuit breaker — ON only if configured AND tripped.
+	CircuitBreakerEnabled bool
+	CircuitBreakerRollback bool
+
+	// TargetGroupArns is a short list of ARNs attached to the service.
+	// Usually 0 or 1 entries.
+	TargetGroupArns []string
+
+	// Events is the most recent N service events, newest-first.
+	// Each entry is pre-formatted "HH:MM:SS  <message>".
+	Events []string
+}
+
+// DescribeService fetches the live state of a single ECS service and
+// returns a ServiceDetails struct. The caller passes the cluster ARN
+// (from Meta["clusterArn"]) and the service ARN (from r.Key). Used by
+// the ecsServiceProvider's ResolveDetails — always refire on every
+// Details entry so the user sees fresh runningCount / deployment
+// state.
+func DescribeService(ctx context.Context, ac *awsctx.Context, clusterArn, serviceArn string) (*ServiceDetails, error) {
+	client := awsecs.NewFromConfig(ac.Cfg)
+	out, err := client.DescribeServices(ctx, &awsecs.DescribeServicesInput{
+		Cluster:  aws.String(clusterArn),
+		Services: []string{serviceArn},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ecs:DescribeServices (cluster=%s service=%s): %w", clusterArn, serviceArn, err)
+	}
+	if len(out.Services) == 0 {
+		return nil, fmt.Errorf("ecs:DescribeServices returned no service for %s", serviceArn)
+	}
+
+	svc := out.Services[0]
+	d := &ServiceDetails{
+		Status:          str(svc.Status),
+		DesiredCount:    svc.DesiredCount,
+		RunningCount:    svc.RunningCount,
+		PendingCount:    svc.PendingCount,
+		LaunchType:      string(svc.LaunchType),
+		PlatformVersion: str(svc.PlatformVersion),
+		TaskDefinition:  str(svc.TaskDefinition),
+	}
+	if svc.CreatedAt != nil {
+		d.CreatedAt = *svc.CreatedAt
+	}
+	// UpdatedAt isn't a direct field; use the primary deployment's
+	// UpdatedAt as a proxy since that's what changes when the service
+	// config changes.
+
+	// Primary deployment + circuit breaker.
+	for _, dep := range svc.Deployments {
+		if str(dep.Status) == "PRIMARY" {
+			d.DeploymentRolloutState = string(dep.RolloutState)
+			d.DeploymentRolloutStateReason = str(dep.RolloutStateReason)
+			if dep.UpdatedAt != nil {
+				d.UpdatedAt = *dep.UpdatedAt
+			}
+			break
+		}
+	}
+	if svc.DeploymentConfiguration != nil && svc.DeploymentConfiguration.DeploymentCircuitBreaker != nil {
+		d.CircuitBreakerEnabled = svc.DeploymentConfiguration.DeploymentCircuitBreaker.Enable
+		d.CircuitBreakerRollback = svc.DeploymentConfiguration.DeploymentCircuitBreaker.Rollback
+	}
+
+	// Load balancer target groups.
+	for _, lb := range svc.LoadBalancers {
+		if lb.TargetGroupArn != nil {
+			d.TargetGroupArns = append(d.TargetGroupArns, *lb.TargetGroupArn)
+		}
+	}
+
+	// Recent events, newest first, cap at 5.
+	const maxEvents = 5
+	for i, ev := range svc.Events {
+		if i >= maxEvents {
+			break
+		}
+		msg := str(ev.Message)
+		ts := ""
+		if ev.CreatedAt != nil {
+			ts = ev.CreatedAt.Local().Format("15:04:05")
+		}
+		if ts != "" {
+			d.Events = append(d.Events, ts+"  "+msg)
+		} else {
+			d.Events = append(d.Events, msg)
+		}
+	}
+	return d, nil
+}
+
+// str dereferences an *string, returning "" when the pointer is nil.
+// Keeps the DescribeService body readable.
+func str(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
 
 // TaskDefDetails is the minimal set of task-definition fields the TUI
 // needs after lazy resolution: the full revision ARN, the family name,

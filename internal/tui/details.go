@@ -43,9 +43,40 @@ func renderDetails(m Model, width int) string {
 	writeField(&b, "Name", r.DisplayName)
 	writeField(&b, "ARN", detailsARN(r, m))
 
+	// Per-provider extra detail rows. When the provider returns nil
+	// AND lazy resolution is in-flight, render a centered
+	// "resolving details…" placeholder instead of an empty gap.
+	// When the provider returns nil AND no resolution is happening,
+	// fall back to the legacy single "Log" row (for the types that
+	// don't implement DetailRows yet).
 	if p, ok := services.Get(r.Type); ok {
-		if group := p.LogGroup(r, m.lazyDetailsFor(r)); group != "" {
-			writeField(&b, "Log", group)
+		lazy := m.lazyDetailsFor(r)
+		rows := p.DetailRows(r, lazy)
+		switch {
+		case len(rows) > 0:
+			for _, row := range rows {
+				switch {
+				case row.Label == "" && row.Value == "":
+					b.WriteString("\n")
+				case row.Label == "":
+					b.WriteString("  ")
+					b.WriteString(row.Value)
+					b.WriteString("\n")
+				default:
+					writeFieldWide(&b, row.Label, row.Value)
+				}
+			}
+		case m.lazyDetailsState[lazyDetailKey{Type: r.Type, Key: r.Key}] == lazyStateInFlight:
+			b.WriteString("\n")
+			b.WriteString("  ")
+			b.WriteString(styleRowDim.Render("resolving details…"))
+			b.WriteString("\n")
+		default:
+			// Legacy fallback: types that haven't implemented
+			// DetailRows yet still get their Log row if available.
+			if group := p.LogGroup(r, lazy); group != "" {
+				writeField(&b, "Log", group)
+			}
 		}
 	}
 	b.WriteString("\n")
@@ -107,6 +138,17 @@ func detailsARN(r core.Resource, m Model) string {
 func writeField(b *strings.Builder, label, value string) {
 	b.WriteString("  ")
 	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 6)))
+	b.WriteString(" ")
+	b.WriteString(value)
+	b.WriteString("\n")
+}
+
+// writeFieldWide is like writeField but reserves a wider label column
+// for DetailRow output. The ECS service details panel has labels like
+// "Deployment" and "LB target" that don't fit the 6-rune budget.
+func writeFieldWide(b *strings.Builder, label, value string) {
+	b.WriteString("  ")
+	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 11)))
 	b.WriteString(" ")
 	b.WriteString(value)
 	b.WriteString("\n")
