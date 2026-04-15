@@ -245,10 +245,19 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Generic lazy-detail resolution. Every provider that has a
 		// non-trivial ResolveDetails participates — the message
 		// handler stores the result in m.lazyDetails keyed by
-		// (type, resource key).
+		// (type, resource key). Providers that return true from
+		// AlwaysRefresh (e.g. ECS service, to keep running counts
+		// and deployment state fresh) fire every time, bypassing
+		// the "resolve once per session" cache.
 		key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
-		if m.lazyDetailsState[key] == lazyStateNone {
-			if p, ok := services.Get(m.detailsResource.Type); ok {
+		if p, ok := services.Get(m.detailsResource.Type); ok {
+			if m.lazyDetailsState[key] == lazyStateNone || p.AlwaysRefresh() {
+				if p.AlwaysRefresh() {
+					// Drop any stale cached map so DetailRows sees
+					// empty lazy and renders the "resolving…"
+					// placeholder until the fresh response lands.
+					delete(m.lazyDetails, key)
+				}
 				m.lazyDetailsState[key] = lazyStateInFlight
 				return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
 			}
