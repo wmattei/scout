@@ -37,6 +37,7 @@ func Register(p Provider) {
 			panic("services: duplicate alias " + alias + " (existing=" + existing.TagLabel() + ", incoming=" + p.TagLabel() + ")")
 		}
 		byAlias[alias] = p
+		core.RegisterAlias(alias, t)
 	}
 }
 

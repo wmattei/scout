@@ -63,11 +63,11 @@ func runPreload(args []string) error {
 			core.RTypeEcsTaskDefFamily,
 		}
 	} else {
-		t, ok := core.ResourceTypeForAlias(target)
+		p, ok := services.Lookup(target)
 		if !ok {
 			return fmt.Errorf("unknown service %q (try one of: s3, buckets, ecs, svc, services, td, task, taskdef, all)", target)
 		}
-		types = []core.ResourceType{t}
+		types = []core.ResourceType{p.Type()}
 	}
 
 	opts := awsctx.ListOptions{
