@@ -41,23 +41,6 @@ func (r ResourceType) String() string {
 	}
 }
 
-// Tag is the short label shown as a colored chip in the TUI.
-func (r ResourceType) Tag() string {
-	switch r {
-	case RTypeBucket:
-		return "S3"
-	case RTypeFolder:
-		return "DIR"
-	case RTypeObject:
-		return "OBJ"
-	case RTypeEcsService:
-		return "ECS"
-	case RTypeEcsTaskDefFamily:
-		return "TASK"
-	default:
-		return "???"
-	}
-}
 
 // Resource is the unified record for anything browsable in the TUI.
 //
