@@ -82,6 +82,16 @@ func runPreload(args []string) error {
 		return err
 	}
 
+	{
+		types := make([]core.ResourceType, 0)
+		priority := make(map[core.ResourceType]int)
+		for _, p := range services.TopLevel() {
+			types = append(types, p.Type())
+			priority[p.Type()] = p.SortPriority()
+		}
+		index.SetTopLevelTypes(types, priority)
+	}
+
 	db, err := index.Open(awsCtx.Profile, awsCtx.Region)
 	if err != nil {
 		return err
