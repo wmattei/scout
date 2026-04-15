@@ -24,6 +24,11 @@ import (
 	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
 	"github.com/wagnermattei/better-aws-cli/internal/tui"
+
+	// Provider registrations — blank imports trigger each package's
+	// init() which calls services.Register for its providers.
+	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
+	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 )
 
 const Version = "0.0.0-phase4"
