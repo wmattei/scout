@@ -11,7 +11,7 @@ import (
 // Three modes are possible:
 //
 //  1. Service scope — the input begins with "<alias>:" where <alias> is
-//     a registered name in core.serviceAliases. Everything after the
+//     a registered name in the services alias registry. Everything after the
 //     colon is ServiceQuery and is used as a fuzzy filter against the
 //     in-memory index restricted to the matching resource type. This
 //     mode is flat; "/" after the colon is not reparsed.
@@ -74,7 +74,7 @@ func ParseScope(input string) Scope {
 	//    and we return early.
 	if colon := strings.IndexByte(input, ':'); colon >= 0 {
 		prefix := input[:colon]
-		if rt, ok := core.ResourceTypeForAlias(prefix); ok {
+		if rt, ok := core.LookupAlias(prefix); ok {
 			s.HasService = true
 			s.Service = rt
 			s.ServiceAlias = prefix
