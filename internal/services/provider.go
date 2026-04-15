@@ -61,9 +61,15 @@ type Provider interface {
 
 	// --- Per-resource accessors -----------------------------------
 
-	// ARN returns the canonical AWS ARN for the given resource.
-	// May return "" for types without a meaningful ARN.
-	ARN(r core.Resource) string
+	// ARN returns the canonical AWS ARN for the given resource. The
+	// lazy map is the same one ResolveDetails populated; providers
+	// that need resolved data to build a fuller ARN (like ECS task
+	// def families, whose ARN includes the :revision suffix from a
+	// DescribeTaskDefinition call) read from it. Providers that
+	// don't need lazy state pass nil through — the map is always
+	// safe to ignore. May return "" for types without a meaningful
+	// ARN.
+	ARN(r core.Resource, lazy map[string]string) string
 
 	// URI returns the user-facing URI form for the Copy URI action.
 	// The bool is false when the type has no URI form (e.g. ECS

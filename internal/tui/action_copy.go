@@ -50,18 +50,14 @@ func execCopyARN(m Model) (Model, tea.Cmd) {
 }
 
 // arnForDetails returns the best ARN we can show for the given
-// resource: the lazy-resolved revision ARN if available, otherwise
-// the provider's default ARN, otherwise the core.Resource.ARN()
-// fallback. The TUI's other ARN consumers (Details panel) go through
-// the same helper.
+// resource. Delegates to the provider's ARN method (which itself reads
+// from the lazy map for types like ECS task-def families that need
+// the resolved revision) and falls back to core.Resource.ARN() when
+// no provider is registered.
 func arnForDetails(r core.Resource, m Model) string {
-	if lazy := m.lazyDetailsFor(r); lazy != nil {
-		if a := lazy["familyArn"]; a != "" {
-			return a
-		}
-	}
+	lazy := m.lazyDetailsFor(r)
 	if p, ok := services.Get(r.Type); ok {
-		if a := p.ARN(r); a != "" {
+		if a := p.ARN(r, lazy); a != "" {
 			return a
 		}
 	}
