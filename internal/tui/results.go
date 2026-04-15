@@ -65,7 +65,7 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 		if p, ok := services.Get(r.Resource.Type); ok {
 			tag = p.TagStyle().Render(padTag(p.TagLabel()))
 		} else {
-			tag = padTag(r.Resource.Type.Tag())
+			tag = padTag("???")
 		}
 
 		// 3. Meta (right-aligned).
