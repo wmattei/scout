@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
 	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
@@ -30,20 +29,11 @@ func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t co
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
-		var (
-			rs  []core.Resource
-			err error
-		)
-		switch t {
-		case core.RTypeBucket:
-			rs, err = awss3.ListBuckets(ctx, ac, awsctx.ListOptions{})
-		case core.RTypeEcsService:
-			rs, err = awsecs.ListServices(ctx, ac, awsctx.ListOptions{})
-		case core.RTypeEcsTaskDefFamily:
-			rs, err = awsecs.ListTaskDefFamilies(ctx, ac, awsctx.ListOptions{})
-		default:
+		p, ok := services.Get(t)
+		if !ok {
 			return msgResourcesUpdated{}
 		}
+		rs, err := p.ListAll(ctx, ac, awsctx.ListOptions{})
 		if err != nil {
 			return msgResourcesUpdated{errors: []string{err.Error()}}
 		}
