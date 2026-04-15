@@ -9,6 +9,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // renderResults returns a string containing every visible row, one per line.
@@ -58,8 +59,15 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 			indi = styleSelIndi.Render("▸ ")
 		}
 
-		// 2. Tag.
-		tag := tagStyleFor(r.Resource.Type).Render(padTag(r.Resource.Type.Tag()))
+		// 2. Tag — pulled from the per-type Provider so styles.go
+		// no longer needs to know which colors belong to which
+		// resource.
+		tag := ""
+		if p, ok := services.Get(r.Resource.Type); ok {
+			tag = p.TagStyle().Render(padTag(p.TagLabel()))
+		} else {
+			tag = padTag(r.Resource.Type.Tag())
+		}
 
 		// 3. Meta (right-aligned).
 		meta := renderMeta(r.Resource)
