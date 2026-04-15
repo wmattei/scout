@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/index"
+	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
 // runPreload implements `better-aws preload [--limit N] [--prefix S] <service|all>`.
@@ -179,20 +178,11 @@ func preloadOne(ctx context.Context, ac *awsctx.Context, db *index.DB, mem *inde
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	var (
-		rs  []core.Resource
-		err error
-	)
-	switch t {
-	case core.RTypeBucket:
-		rs, err = awss3.ListBuckets(ctx, ac, opts)
-	case core.RTypeEcsService:
-		rs, err = awsecs.ListServices(ctx, ac, opts)
-	case core.RTypeEcsTaskDefFamily:
-		rs, err = awsecs.ListTaskDefFamilies(ctx, ac, opts)
-	default:
-		return 0, fmt.Errorf("unsupported resource type %v", t)
+	p, ok := services.Get(t)
+	if !ok {
+		return 0, fmt.Errorf("no provider registered for resource type %v", t)
 	}
+	rs, err := p.ListAll(ctx, ac, opts)
 	if err != nil {
 		return 0, err
 	}
