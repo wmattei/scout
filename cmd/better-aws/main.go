@@ -128,7 +128,7 @@ func runTUI() (err error) {
 	)
 
 	model := tui.NewModel(memory, db, awsCtx, activity)
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, runErr := program.Run(); runErr != nil {
 		return fmt.Errorf("tui: %w", runErr)
 	}
