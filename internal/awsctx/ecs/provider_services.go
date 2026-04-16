@@ -64,6 +64,14 @@ func (ecsServiceProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts 
 	return ListServices(ctx, ac, opts)
 }
 
+func (ecsServiceProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "force-deploy", Label: "Force new Deployment"},
+		{ID: "tail-logs", Label: "Tail Logs"},
+	}
+}
+
 // PollingInterval — ECS service details auto-refresh every 10s while
 // the user is looking at the Details view so running counts,
 // deployment state, and recent events stay current.

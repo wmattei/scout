@@ -75,3 +75,13 @@ func (objectProvider) ListAll(context.Context, *awsctx.Context, awsctx.ListOptio
 	return nil, nil
 }
 
+func (objectProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-uri", Label: "Copy URI"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+		{ID: "download", Label: "Download"},
+		{ID: "preview", Label: "Preview"},
+	}
+}
+

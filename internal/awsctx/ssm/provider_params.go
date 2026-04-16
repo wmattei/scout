@@ -66,6 +66,15 @@ func (ssmParameterProvider) ListAll(ctx context.Context, ac *awsctx.Context, opt
 	return ListParameters(ctx, ac, opts)
 }
 
+func (ssmParameterProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+		{ID: "copy-value", Label: "Copy Value"},
+		{ID: "update-value", Label: "Update Value"},
+	}
+}
+
 // AlwaysRefresh — SSM parameters may be updated by automation so we re-fetch
 // on every Details entry to show the fresh value.
 func (ssmParameterProvider) AlwaysRefresh() bool { return true }

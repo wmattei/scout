@@ -60,6 +60,15 @@ func (lambdaFunctionProvider) ListAll(ctx context.Context, ac *awsctx.Context, o
 	return ListFunctions(ctx, ac, opts)
 }
 
+func (lambdaFunctionProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+		{ID: "tail-logs", Label: "Tail Logs"},
+		{ID: "run", Label: "Run"},
+	}
+}
+
 // AlwaysRefresh — Lambda function configuration is relatively static so we
 // cache results per session.
 func (lambdaFunctionProvider) AlwaysRefresh() bool { return false }

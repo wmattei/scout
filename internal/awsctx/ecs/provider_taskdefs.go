@@ -86,6 +86,14 @@ func (ecsTaskDefProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts 
 	return ListTaskDefFamilies(ctx, ac, opts)
 }
 
+func (ecsTaskDefProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+		{ID: "tail-logs", Label: "Tail Logs"},
+	}
+}
+
 // ResolveDetails fires DescribeTaskDefinition for the family and
 // CountRunningTasks to get a live task count. Both run sequentially
 // (the task count depends on the family name, which is already in

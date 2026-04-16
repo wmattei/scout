@@ -67,6 +67,14 @@ func (bucketProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts awsc
 	return ListBuckets(ctx, ac, opts)
 }
 
+func (bucketProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-uri", Label: "Copy URI"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+	}
+}
+
 // ResolveDetails fires the parallel DescribeBucket helper (4 Get*
 // calls) and stores the results in the lazy map. Also grabs
 // CreatedAt from r.Meta if ListBuckets captured it.

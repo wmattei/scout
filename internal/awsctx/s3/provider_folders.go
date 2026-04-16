@@ -75,6 +75,14 @@ func (folderProvider) ListAll(context.Context, *awsctx.Context, awsctx.ListOptio
 	return nil, nil
 }
 
+func (folderProvider) Actions() []services.ActionDef {
+	return []services.ActionDef{
+		{ID: "open", Label: "Open in Browser"},
+		{ID: "copy-uri", Label: "Copy URI"},
+		{ID: "copy-arn", Label: "Copy ARN"},
+	}
+}
+
 // formatUnixTimeOrEmpty mirrors the helper in internal/tui/results.go.
 // Duplicated here (3 lines) so the provider doesn't need to import
 // the tui package, which would create a cycle. If formatting becomes
