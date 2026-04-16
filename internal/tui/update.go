@@ -756,6 +756,21 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDetails
 		m.toast = newToast("stopped tailing", 2*time.Second)
+		// Re-fire a fresh resolve so the details panel shows current
+		// data after returning from the tail view. For providers with
+		// PollingInterval > 0 (ECS services), the resolve handler's
+		// schedulePollIfNeeded restarts the 10s polling cycle
+		// automatically. For providers without polling (Lambda), this
+		// is a one-shot refresh that brings the stale details up to
+		// date after however long the user spent tailing.
+		if p, ok := services.Get(m.detailsResource.Type); ok {
+			key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+			if p.AlwaysRefresh() {
+				delete(m.lazyDetails, key)
+				m.lazyDetailsState[key] = lazyStateInFlight
+			}
+			return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
+		}
 		return m, nil
 	case "ctrl+down":
 		// Jump to the bottom and re-engage auto-follow.
