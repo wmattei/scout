@@ -40,6 +40,10 @@ const Version = "0.0.0-phase4"
 func main() {
 	// Subcommand dispatch. Anything unrecognized falls through to the
 	// TUI so legacy invocations don't break.
+	if len(os.Args) >= 2 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
+		printHelp()
+		return
+	}
 	if len(os.Args) >= 3 && os.Args[1] == "cache" && os.Args[2] == "clear" {
 		if err := runCacheClear(); err != nil {
 			fmt.Fprintf(os.Stderr, "better-aws: %v\n", err)
@@ -175,6 +179,40 @@ func crashLogPath() string {
 		return "crash.log"
 	}
 	return filepath.Join(dir, "crash.log")
+}
+
+// printHelp prints the usage summary to stdout.
+func printHelp() {
+	fmt.Print(`better-aws — interactive AWS resource navigator
+
+Usage:
+  better-aws                            Launch the TUI
+  better-aws preload <service|all>      Populate cache (--limit N, --prefix S)
+  better-aws cache clear                Wipe local cache
+  better-aws help                       Show this help
+
+Service scopes (type in TUI):
+  s3:, buckets:                         S3 buckets
+  ecs:, svc:, services:                 ECS services
+  td:, task:, taskdef:                  ECS task definitions
+  lambda:, fn:, functions:              Lambda functions
+  ssm:, param:, params:, parameter:     SSM parameters
+
+Key bindings:
+  ↑/↓         Navigate results
+  Tab          Autocomplete / drill into bucket
+  Enter        Open details + actions
+  Esc          Back
+  Ctrl+P       Switch AWS profile/region
+  Ctrl+C       Quit
+  /            Filter (in tail logs)
+  Opt+Bksp     Delete path segment
+
+Environment:
+  AWS_PROFILE, AWS_REGION               Standard SDK credential chain
+  BETTER_AWS_DEBUG=1                    Enable debug log
+  EDITOR                                Editor for Lambda Run / SSM Update
+`)
 }
 
 // writeCrashLog persists a panic + its stack to crash.log, overwriting
