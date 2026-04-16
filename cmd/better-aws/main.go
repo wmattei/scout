@@ -30,7 +30,9 @@ import (
 	// Provider registrations — blank imports trigger each package's
 	// init() which calls services.Register for its providers.
 	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
+	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/lambda"
 	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
+	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/ssm"
 )
 
 const Version = "0.0.0-phase4"

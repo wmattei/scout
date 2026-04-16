@@ -72,6 +72,20 @@ func ActionsFor(t core.ResourceType) []Action {
 			{Label: "Copy ARN", Execute: execCopyARN},
 			{Label: "Tail Logs", Execute: execTailLogs},
 		}
+	case core.RTypeLambdaFunction:
+		return []Action{
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy ARN", Execute: execCopyARN},
+			{Label: "Tail Logs", Execute: execTailLogs},
+			{Label: "Run", Execute: execLambdaRun},
+		}
+	case core.RTypeSSMParameter:
+		return []Action{
+			{Label: "Open in Browser", Execute: execOpenInBrowser},
+			{Label: "Copy ARN", Execute: execCopyARN},
+			{Label: "Copy Value", Execute: execSSMCopyValue},
+			{Label: "Update Value", Execute: execSSMUpdateValue},
+		}
 	default:
 		return nil
 	}

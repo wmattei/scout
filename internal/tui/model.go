@@ -92,6 +92,14 @@ type Model struct {
 	// in-memory index. The set is cleared by the switcher commit
 	// handler when the AWS context swaps.
 	serviceScopeFetched map[string]struct{}
+
+	// Editor state for interactive actions (Lambda invoke, SSM update).
+	// pendingEditorAction identifies what to do after the editor closes;
+	// pendingEditorPath is the temp file the editor writes to;
+	// pendingEditorResource is the resource the editor was opened for.
+	pendingEditorAction   editorAction
+	pendingEditorPath     string
+	pendingEditorResource core.Resource
 }
 
 // NewModel constructs the initial model for the bubbletea program.
