@@ -36,6 +36,7 @@ type msgActionDone struct {
 	toast          string
 	err            error
 	refetchDetails bool
+	success        bool // render as a green success toast instead of neutral info
 }
 
 // ActionsFor returns the ordered action list for a resource type. The

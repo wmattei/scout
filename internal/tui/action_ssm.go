@@ -101,6 +101,6 @@ func ssmUpdateCmd(ac *awsctx.Context, r core.Resource, content []byte) tea.Cmd {
 				err:   err,
 			}
 		}
-		return msgActionDone{toast: "parameter updated", refetchDetails: true}
+		return msgActionDone{toast: "parameter updated", refetchDetails: true, success: true}
 	}
 }
