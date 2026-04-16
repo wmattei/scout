@@ -17,6 +17,16 @@ var (
 	styleInputPrompt = lipgloss.NewStyle().Bold(true).Foreground(ac("#005FAF", "#5FD7FF"))
 	styleInputText   = lipgloss.NewStyle().Foreground(ac("#000000", "#FFFFFF"))
 
+	// Details panel.
+	styleDetailsHeader = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ac("#005FAF", "#5FD7FF"))
+	styleDetailsLabel = lipgloss.NewStyle().
+				Foreground(ac("#767676", "#8A8A8A"))
+	styleConfirmHint = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(ac("#AF8700", "#FFD75F"))
+
 	// Result rows.
 	styleRowBase   = lipgloss.NewStyle()
 	styleRowSel    = lipgloss.NewStyle().Background(ac("#D0D0FF", "#2A2A5A"))

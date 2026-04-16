@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/wagnermattei/better-aws-cli/internal/core"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
@@ -169,17 +167,3 @@ func padRightPlain(s string, n int) string {
 	return s + strings.Repeat(" ", n-len(s))
 }
 
-// styleDetailsHeader styles the "Details" / "Actions" section headers.
-var styleDetailsHeader = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#005FAF", Dark: "#5FD7FF"})
-
-// styleDetailsLabel dims the field label so values read brighter.
-var styleDetailsLabel = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#767676", Dark: "#8A8A8A"})
-
-// styleConfirmHint renders the "(confirm: y/n)" badge next to an
-// action that is awaiting destructive-action confirmation.
-var styleConfirmHint = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#AF8700", Dark: "#FFD75F"})
