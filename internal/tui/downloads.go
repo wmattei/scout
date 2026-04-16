@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/wagnermattei/better-aws-cli/internal/format"
 )
 
 // downloadsDir returns the directory where downloaded objects should be
@@ -82,12 +80,4 @@ func downloadPathFor(basename string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, basename), nil
-}
-
-// formatBytes turns a decimal byte-count string into a human-readable
-// suffix ("12.4 MB"). Empty or unparseable input returns "".
-// Used by action_download.go and action_preview.go for toast messages.
-// Delegates to format.Bytes.
-func formatBytes(s string) string {
-	return format.Bytes(s)
 }
