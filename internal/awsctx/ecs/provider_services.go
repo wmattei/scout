@@ -63,6 +63,11 @@ func (ecsServiceProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts 
 	return ListServices(ctx, ac, opts)
 }
 
+// PollingInterval — ECS service details auto-refresh every 10s while
+// the user is looking at the Details view so running counts,
+// deployment state, and recent events stay current.
+func (ecsServiceProvider) PollingInterval() time.Duration { return 10 * time.Second }
+
 // AlwaysRefresh — ECS service details are time-sensitive (running
 // count, deployment rollout state, recent events). The Details Enter
 // handler re-fires ResolveDetails on every entry so the user sees
