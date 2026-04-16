@@ -10,6 +10,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
@@ -119,7 +120,7 @@ func (ssmParameterProvider) DetailRows(r core.Resource, lazy map[string]string) 
 	}
 
 	if ts := lazy["lastModified"]; ts != "" {
-		rows = append(rows, services.DetailRow{Label: "Modified", Value: formatTimeAge(ts)})
+		rows = append(rows, services.DetailRow{Label: "Modified", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
 	if dt := lazy["dataType"]; dt != "" {
@@ -143,31 +144,6 @@ func colorParamType(t string) string {
 		return styleWarn.Render(t)
 	default:
 		return t
-	}
-}
-
-// formatTimeAge renders "YYYY-MM-DD HH:MM  (Xd ago)" from a Unix-seconds string.
-func formatTimeAge(s string) string {
-	var unix int64
-	if _, err := fmt.Sscanf(s, "%d", &unix); err != nil || unix <= 0 {
-		return ""
-	}
-	t := time.Unix(unix, 0).Local()
-	age := time.Since(t)
-	return fmt.Sprintf("%s  %s", t.Format("2006-01-02 15:04"), styleDim.Render("("+humanDuration(age)+" ago)"))
-}
-
-// humanDuration renders a time.Duration as "34d", "6h", "12m", "45s".
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
 

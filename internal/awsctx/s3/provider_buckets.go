@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
@@ -105,7 +105,7 @@ func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 	}
 
 	if ts := lazy["createdAt"]; ts != "" {
-		rows = append(rows, services.DetailRow{Label: "Created", Value: formatTimeAge(ts)})
+		rows = append(rows, services.DetailRow{Label: "Created", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
 	rows = append(rows,
@@ -114,7 +114,7 @@ func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 		services.DetailRow{Label: "Public", Value: colorPublicAccess(lazy["publicAccess"])},
 	)
 
-	if tags := decodeJSONSlice(lazy["tags"]); len(tags) > 0 {
+	if tags := format.DecodeJSONSlice(lazy["tags"]); len(tags) > 0 {
 		rows = append(rows, services.DetailRow{}) // spacer
 		rows = append(rows, services.DetailRow{Value: styleHeader.Render("Tags")})
 		for _, t := range tags {
@@ -123,32 +123,6 @@ func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 	}
 
 	return rows
-}
-
-// formatTimeAge renders "2026-04-13 15:42  (2d ago)" from a Unix
-// seconds string. Mirrors the helper in provider_services.go.
-func formatTimeAge(s string) string {
-	var unix int64
-	_, err := fmt.Sscanf(s, "%d", &unix)
-	if err != nil || unix <= 0 {
-		return ""
-	}
-	t := time.Unix(unix, 0).Local()
-	age := time.Since(t)
-	return fmt.Sprintf("%s  %s", t.Format("2006-01-02 15:04"), styleDim.Render("("+humanDuration(age)+" ago)"))
-}
-
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
 }
 
 func colorVersioning(v string) string {
@@ -171,18 +145,6 @@ func colorPublicAccess(v string) string {
 	default:
 		return styleWarn.Render(v)
 	}
-}
-
-// decodeJSONSlice unmarshals a JSON []string. Returns nil on failure.
-func decodeJSONSlice(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	return out
 }
 
 // Shared styles for color-coded signals. Mirrors the palette in

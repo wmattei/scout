@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/search"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
@@ -54,12 +56,14 @@ func (objectProvider) ConsoleURL(r core.Resource, region string, _ map[string]st
 func (objectProvider) RenderMeta(r core.Resource) string {
 	var parts []string
 	if s, ok := r.Meta["size"]; ok && s != "" {
-		parts = append(parts, formatBytesOrEmpty(s))
+		if b := format.Bytes(s); b != "" {
+			parts = append(parts, b)
+		}
 	}
 	if ts, ok := r.Meta["mtime"]; ok && ts != "" {
 		parts = append(parts, formatUnixTimeOrEmpty(ts))
 	}
-	return joinNonEmpty(parts, "  ")
+	return strings.Join(parts, "  ")
 }
 
 func (objectProvider) TabComplete(scope search.Scope, r core.Resource) string {
@@ -71,42 +75,3 @@ func (objectProvider) ListAll(context.Context, *awsctx.Context, awsctx.ListOptio
 	return nil, nil
 }
 
-// formatBytesOrEmpty mirrors the helper in internal/tui/results.go.
-// Duplicated for the same reason as formatUnixTimeOrEmpty in
-// provider_folders.go: providers must not import the tui package.
-func formatBytesOrEmpty(s string) string {
-	var n int64
-	_, err := fmt.Sscanf(s, "%d", &n)
-	if err != nil || n < 0 {
-		return ""
-	}
-	const (
-		kib = 1024
-		mib = kib * 1024
-		gib = mib * 1024
-	)
-	switch {
-	case n >= gib:
-		return fmt.Sprintf("%.1f GB", float64(n)/float64(gib))
-	case n >= mib:
-		return fmt.Sprintf("%.1f MB", float64(n)/float64(mib))
-	case n >= kib:
-		return fmt.Sprintf("%.1f KB", float64(n)/float64(kib))
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
-}
-
-func joinNonEmpty(parts []string, sep string) string {
-	out := ""
-	for _, p := range parts {
-		if p == "" {
-			continue
-		}
-		if out != "" {
-			out += sep
-		}
-		out += p
-	}
-	return out
-}
