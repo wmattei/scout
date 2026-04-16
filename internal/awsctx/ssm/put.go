@@ -7,7 +7,7 @@ import (
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // PutParameter writes a new or updated value to an SSM parameter. The

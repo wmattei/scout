@@ -1,4 +1,4 @@
-// Package s3 contains better-aws's thin wrappers around the AWS S3 SDK.
+// Package s3 contains scout's thin wrappers around the AWS S3 SDK.
 // Each function returns []core.Resource ready to hand to the index layer.
 package s3
 
@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListBuckets returns buckets visible to the current caller, optionally

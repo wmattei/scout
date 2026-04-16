@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/services"
 )
 
-// runPreload implements `better-aws preload [--limit N] [--prefix S] <service|all>`.
+// runPreload implements `scout preload [--limit N] [--prefix S] <service|all>`.
 // It resolves the AWS context, opens the SQLite cache for the current
 // (profile, region) pair, runs the live fetch for the requested
 // service(s), persists the results, prints a per-type item count, and
@@ -22,12 +22,12 @@ import (
 // Flags are parsed via a flag.FlagSet so they can appear before or
 // after the positional service argument.
 //
-//	better-aws preload s3
-//	better-aws preload --limit 50 s3
-//	better-aws preload s3 --prefix prod-
-//	better-aws preload --limit 100 --prefix worker- td
-//	better-aws preload all                 # every type, no filter
-//	better-aws preload --limit 20 all      # cap each type at 20
+//	scout preload s3
+//	scout preload --limit 50 s3
+//	scout preload s3 --prefix prod-
+//	scout preload --limit 100 --prefix worker- td
+//	scout preload all                 # every type, no filter
+//	scout preload --limit 20 all      # cap each type at 20
 //
 // `--prefix` is honoured server-side for S3 buckets (Prefix on
 // ListBuckets) and ECS task-def families (FamilyPrefix on
@@ -48,10 +48,10 @@ func runPreload(args []string) error {
 	// fs.Parse.
 	flagArgs, positional := splitPreloadArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
-		return fmt.Errorf("usage: better-aws preload [--limit N] [--prefix S] <s3|ecs|td|all>")
+		return fmt.Errorf("usage: scout preload [--limit N] [--prefix S] <s3|ecs|td|all>")
 	}
 	if len(positional) == 0 {
-		return fmt.Errorf("usage: better-aws preload [--limit N] [--prefix S] <s3|ecs|td|all>")
+		return fmt.Errorf("usage: scout preload [--limit N] [--prefix S] <s3|ecs|td|all>")
 	}
 	target := strings.ToLower(positional[0])
 
@@ -105,7 +105,7 @@ func runPreload(args []string) error {
 	}
 	mem.Load(cached)
 
-	fmt.Printf("better-aws: preloading into %s/%s", awsCtx.Profile, awsCtx.Region)
+	fmt.Printf("scout: preloading into %s/%s", awsCtx.Profile, awsCtx.Region)
 	if opts.Limit > 0 {
 		fmt.Printf(" (limit=%d)", opts.Limit)
 	}

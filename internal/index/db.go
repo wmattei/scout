@@ -1,6 +1,6 @@
 // Package index owns the on-disk SQLite cache and the in-memory index that
 // serves the TUI. DBs are one file per (profile, region) pair, living under
-// $XDG_CACHE_HOME/better-aws (fallback: $HOME/.cache/better-aws).
+// $XDG_CACHE_HOME/scout (fallback: $HOME/.cache/scout).
 package index
 
 import (
@@ -13,7 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // schemaVersion is bumped whenever the DDL changes. The cache is rebuildable,
@@ -264,11 +264,11 @@ func parseType(s string) core.ResourceType {
 
 func cacheDir() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "better-aws"), nil
+		return filepath.Join(xdg, "scout"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving home dir: %w", err)
 	}
-	return filepath.Join(home, ".cache", "better-aws"), nil
+	return filepath.Join(home, ".cache", "scout"), nil
 }

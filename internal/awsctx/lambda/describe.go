@@ -7,7 +7,7 @@ import (
 
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // FunctionDetails holds the extended details for a Lambda function

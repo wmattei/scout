@@ -8,8 +8,8 @@ import (
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListTaskDefFamilies returns one Resource per active task-definition family.

@@ -8,7 +8,7 @@ import (
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // InvokeResult holds the response from a Lambda function invocation.

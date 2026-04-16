@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // renderDetails produces the full Details screen for the current

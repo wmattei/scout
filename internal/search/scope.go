@@ -3,7 +3,7 @@ package search
 import (
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Scope describes how the TUI should interpret the current input value.

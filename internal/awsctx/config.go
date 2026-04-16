@@ -13,7 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
+	"github.com/wmattei/scout/internal/debuglog"
 )
 
 // Context is the resolved AWS environment for the current session. Phase 1
@@ -50,11 +50,11 @@ func Resolve(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("no region resolved for profile %q — set AWS_REGION or configure 'region' in ~/.aws/config", profile)
 	}
 
-	// Route the SDK logger through debuglog. When BETTER_AWS_DEBUG is
+	// Route the SDK logger through debuglog. When SCOUT_DEBUG is
 	// unset the adapter is smithy's Nop{}, so no output hits the
 	// terminal and the alt-screen frame stays stable. With the env
 	// var set, SDK records flow into
-	// $XDG_CACHE_HOME/better-aws/debug.log alongside app-level
+	// $XDG_CACHE_HOME/scout/debug.log alongside app-level
 	// events.
 	cfg.Logger = debuglog.SDKLogger()
 

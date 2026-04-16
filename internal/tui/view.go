@@ -73,7 +73,7 @@ func (m Model) renderSearchBody(height int) string {
 	inputValue := m.input.Value()
 	switch {
 	case inputValue == "" && m.memory.Len() == 0:
-		emptyMsg = "empty cache — run `better-aws preload all` or type a service scope (s3:, ecs:, td:)"
+		emptyMsg = "empty cache — run `scout preload all` or type a service scope (s3:, ecs:, td:)"
 	case inputValue == "":
 		emptyMsg = "start typing to search cached resources"
 	case m.isLoadingScoped() && len(visible) == 0:

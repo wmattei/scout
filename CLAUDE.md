@@ -1,22 +1,22 @@
-# better-aws-cli
+# scout
 
 Interactive terminal TUI for navigating and managing AWS infrastructure. Fuzzy-searchable cache over S3 buckets, ECS services/task definitions, Lambda functions, and SSM parameters — with live prefix search into S3 bucket contents, real-time log tailing, and interactive actions (deploy, invoke, update).
 
 ## Quick start
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
-./bin/better-aws                              # launch TUI
-./bin/better-aws preload all                  # populate cache
-./bin/better-aws preload --limit 50 s3        # selective preload
-./bin/better-aws cache clear                  # wipe local cache
-BETTER_AWS_DEBUG=1 ./bin/better-aws           # enable debug log
+go build -o bin/scout ./cmd/scout
+./bin/scout                              # launch TUI
+./bin/scout preload all                  # populate cache
+./bin/scout preload --limit 50 s3        # selective preload
+./bin/scout cache clear                  # wipe local cache
+SCOUT_DEBUG=1 ./bin/scout           # enable debug log
 ```
 
 ## Architecture overview
 
 ```
-cmd/better-aws/           Binary entry point, subcommand dispatch
+cmd/scout/           Binary entry point, subcommand dispatch
 internal/
   core/                   Root of dependency graph — Resource, ResourceType
   services/               Provider interface + process-global registry
@@ -29,7 +29,7 @@ internal/
   index/                  SQLite cache (per profile+region) + in-memory index
   search/                 Fuzzy matcher, prefix matcher, scope parser
   tui/                    Bubbletea TUI — model, views, actions, styles
-  debuglog/               Optional slog-backed debug log (BETTER_AWS_DEBUG=1)
+  debuglog/               Optional slog-backed debug log (SCOUT_DEBUG=1)
 ```
 
 ## Dependency graph
@@ -42,7 +42,7 @@ core (root — no internal imports)
   ← awsctx (AWS SDK config, activity middleware)
     ← awsctx/s3, awsctx/ecs, awsctx/lambda, awsctx/ssm, awsctx/logs
   ← tui (bubbletea Model, views, actions)
-  ← cmd/better-aws (binary, subcommands)
+  ← cmd/scout (binary, subcommands)
 ```
 
 **Import rules:**
@@ -104,9 +104,9 @@ The provider file implements `services.Provider`. Embed `services.BaseProvider` 
 
 ### 4. Register via blank import (1 line)
 
-`cmd/better-aws/main.go`:
+`cmd/scout/main.go`:
 ```go
-_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/myservice"
+_ "github.com/wmattei/scout/internal/awsctx/myservice"
 ```
 
 ### 5. Add actions (a few lines)
@@ -152,12 +152,12 @@ Interactive actions (Lambda Run, SSM Update Value) suspend the TUI via `tea.Exec
 
 ## File reference
 
-### `cmd/better-aws/`
+### `cmd/scout/`
 
 | File | Purpose |
 |---|---|
 | `main.go` | Subcommand dispatch, panic recovery, debuglog init, TUI launch |
-| `preload.go` | `better-aws preload` subcommand with `--limit` and `--prefix` flags |
+| `preload.go` | `scout preload` subcommand with `--limit` and `--prefix` flags |
 
 ### `internal/tui/`
 
@@ -223,16 +223,16 @@ Each service has its own subpackage with adapters + a `provider_*.go` file:
 
 ## Cache
 
-SQLite databases at `~/.cache/better-aws/` (or `$XDG_CACHE_HOME/better-aws/`), one file per `(profile, region)` pair: `<profile>__<region>.db`.
+SQLite databases at `~/.cache/scout/` (or `$XDG_CACHE_HOME/scout/`), one file per `(profile, region)` pair: `<profile>__<region>.db`.
 
 Two tables: `resources` (top-level types) and `bucket_contents` (S3 folder/object drill-in cache). Schema version is pinned; mismatches drop+recreate.
 
 Cache is populated by:
 - Service-scope first-entry fetches (`s3:`, `ecs:`, etc.)
-- `better-aws preload <service>` subcommand
+- `scout preload <service>` subcommand
 - Opportunistic upsert of every S3 ListObjectsV2 result during drill-in
 
-No launch-time refresh. No automatic expiration. `better-aws cache clear` wipes everything.
+No launch-time refresh. No automatic expiration. `scout cache clear` wipes everything.
 
 ## Authentication
 
@@ -242,11 +242,11 @@ Standard `aws-sdk-go-v2` credential chain. Profile resolution: `AWS_PROFILE` > `
 
 ## Debug log
 
-`BETTER_AWS_DEBUG=1` writes structured JSON to `~/.cache/better-aws/debug.log` (truncated per run). SDK log records (via a smithy-go adapter) and app-level events are both captured.
+`SCOUT_DEBUG=1` writes structured JSON to `~/.cache/scout/debug.log` (truncated per run). SDK log records (via a smithy-go adapter) and app-level events are both captured.
 
 ## Panic recovery
 
-`cmd/better-aws/main.go` wraps `runTUI()` in a `defer recover()` that writes a stack dump to `~/.cache/better-aws/crash.log` and returns a clean error to stderr.
+`cmd/scout/main.go` wraps `runTUI()` in a `defer recover()` that writes a stack dump to `~/.cache/scout/crash.log` and returns a clean error to stderr.
 
 ## Testing policy
 

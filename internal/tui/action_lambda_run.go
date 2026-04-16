@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awslambda "github.com/wagnermattei/better-aws-cli/internal/awsctx/lambda"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awslambda "github.com/wmattei/scout/internal/awsctx/lambda"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execLambdaRun opens $EDITOR with a default "{}" payload, then invokes
@@ -22,7 +22,7 @@ func execLambdaRun(m Model) (Model, tea.Cmd) {
 	}
 
 	// Create a temp file pre-filled with a default JSON payload.
-	f, err := os.CreateTemp("", "better-aws-lambda-*.json")
+	f, err := os.CreateTemp("", "scout-lambda-*.json")
 	if err != nil {
 		m.toast = newErrorToast(fmt.Sprintf("create temp file: %v", err))
 		return m, nil
@@ -82,7 +82,7 @@ func lambdaInvokeCmd(ac *awsctx.Context, r core.Resource, payload []byte) tea.Cm
 // and returns its path. The file is not cleaned up — it lives in the OS temp
 // dir and is removed on reboot.
 func writeTempJSON(data []byte) (string, error) {
-	f, err := os.CreateTemp("", "better-aws-invoke-*.json")
+	f, err := os.CreateTemp("", "scout-invoke-*.json")
 	if err != nil {
 		return "", err
 	}

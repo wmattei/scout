@@ -1,4 +1,4 @@
-// Package ssm contains better-aws's thin wrappers around the AWS SSM SDK.
+// Package ssm contains scout's thin wrappers around the AWS SSM SDK.
 package ssm
 
 import (
@@ -9,8 +9,8 @@ import (
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListParameters lists SSM Parameter Store parameters using DescribeParameters.

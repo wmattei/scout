@@ -6,7 +6,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
+	"github.com/wmattei/scout/internal/debuglog"
 )
 
 // ResolveForProfile is the same as Resolve but takes explicit profile

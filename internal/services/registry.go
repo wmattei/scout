@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // registry is the process-global Provider lookup table. All access

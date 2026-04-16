@@ -61,7 +61,7 @@ func (a *Activity) finish() {
 func (a *Activity) Attach(cfg *aws.Config) {
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		return stack.Initialize.Add(
-			middleware.InitializeMiddlewareFunc("better-aws/activity",
+			middleware.InitializeMiddlewareFunc("scout/activity",
 				func(ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
 					op := middleware.GetOperationName(ctx)
 					a.start(op)

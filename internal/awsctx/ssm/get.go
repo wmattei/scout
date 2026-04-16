@@ -7,7 +7,7 @@ import (
 
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // ParameterDetails holds the full resolved details for an SSM parameter,

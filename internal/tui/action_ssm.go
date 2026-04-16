@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsssm "github.com/wagnermattei/better-aws-cli/internal/awsctx/ssm"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awsssm "github.com/wmattei/scout/internal/awsctx/ssm"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execSSMCopyValue reads the resolved parameter value from the lazy map and
@@ -56,7 +56,7 @@ func execSSMUpdateValue(m Model) (Model, tea.Cmd) {
 		currentValue = lazy["value"]
 	}
 
-	f, err := os.CreateTemp("", "better-aws-ssm-*.txt")
+	f, err := os.CreateTemp("", "scout-ssm-*.txt")
 	if err != nil {
 		m.toast = newErrorToast(fmt.Sprintf("create temp file: %v", err))
 		return m, nil

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // spinnerFrames is a simple braille-dot spinner. Index % len picks a frame.

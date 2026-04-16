@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Persist applies a diff-patch refresh of the given resource type to

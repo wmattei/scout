@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awsecs "github.com/wmattei/scout/internal/awsctx/ecs"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execForceDeploy enters a confirmation state instead of firing
