@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -73,25 +74,34 @@ func (ecsTaskDefProvider) ConsoleURL(r core.Resource, region string, lazy map[st
 
 func (ecsTaskDefProvider) RenderMeta(_ core.Resource) string { return "" }
 
+// PollingInterval — task def details auto-refresh every 10s so the
+// running-task count stays current.
+func (ecsTaskDefProvider) PollingInterval() time.Duration { return 10 * time.Second }
+
+// AlwaysRefresh — always fetch fresh state on every Details entry.
+func (ecsTaskDefProvider) AlwaysRefresh() bool { return true }
+
 func (ecsTaskDefProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
 	return ListTaskDefFamilies(ctx, ac, opts)
 }
 
 // ResolveDetails fires DescribeTaskDefinition for the family and
-// stores the full set of fields the DetailRows renderer needs.
+// CountRunningTasks to get a live task count. Both run sequentially
+// (the task count depends on the family name, which is already in
+// r.Key, so no dependency on the Describe response).
 func (ecsTaskDefProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context, r core.Resource) (map[string]string, error) {
 	d, err := DescribeFamily(ctx, ac, r.Key)
 	if err != nil || d == nil {
 		return nil, err
 	}
 	out := map[string]string{
-		"familyArn":    d.ARN,
-		"revision":     fmt.Sprintf("%d", d.Revision),
-		"cpu":          d.CPU,
-		"memory":       d.Memory,
-		"networkMode":  d.NetworkMode,
-		"taskRole":     d.TaskRoleArn,
-		"execRole":     d.ExecutionRoleArn,
+		"familyArn":   d.ARN,
+		"revision":    fmt.Sprintf("%d", d.Revision),
+		"cpu":         d.CPU,
+		"memory":      d.Memory,
+		"networkMode": d.NetworkMode,
+		"taskRole":    d.TaskRoleArn,
+		"execRole":    d.ExecutionRoleArn,
 	}
 	if len(d.LogGroups) > 0 {
 		out["logGroup"] = d.LogGroups[0]
@@ -104,6 +114,12 @@ func (ecsTaskDefProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context
 			out["containers"] = string(b)
 		}
 	}
+
+	// Running task count — best-effort, non-fatal.
+	if count, err := CountRunningTasks(ctx, ac, r.Key); err == nil {
+		out["runningTasks"] = fmt.Sprintf("%d", count)
+	}
+
 	return out, nil
 }
 
@@ -124,6 +140,18 @@ func (ecsTaskDefProvider) DetailRows(r core.Resource, lazy map[string]string) []
 
 	rows := []services.DetailRow{
 		{Label: "Revision", Value: lazy["revision"]},
+	}
+
+	// Running task count.
+	if rt := lazy["runningTasks"]; rt != "" {
+		label := rt + " running"
+		var n int
+		fmt.Sscanf(rt, "%d", &n)
+		if n > 0 {
+			rows = append(rows, services.DetailRow{Label: "Tasks", Value: styleGood.Render(label)})
+		} else {
+			rows = append(rows, services.DetailRow{Label: "Tasks", Value: styleDim.Render(label)})
+		}
 	}
 
 	// CPU / Memory on one row.
