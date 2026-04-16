@@ -131,14 +131,23 @@ func str(p *string) string {
 	return *p
 }
 
-// TaskDefDetails is the minimal set of task-definition fields the TUI
-// needs after lazy resolution: the full revision ARN, the family name,
-// and each container's CloudWatch log group (when configured).
+// TaskDefDetails holds the fields the TUI renders in the Details
+// panel when a task definition family is selected. Assembled by
+// DescribeFamily from a single DescribeTaskDefinition call.
 type TaskDefDetails struct {
 	Family    string
 	Revision  int32
 	ARN       string
 	LogGroups []string // one entry per container that has an awslogs log group
+
+	// Extended fields for the Details panel.
+	CPU                    string   // e.g. "256", "1024"
+	Memory                 string   // e.g. "512", "2048"
+	NetworkMode            string   // awsvpc, bridge, host, none
+	TaskRoleArn            string
+	ExecutionRoleArn       string
+	RequiresCompatibilities []string // FARGATE, EC2
+	ContainerImages        []string // one "<name>=<image>" per container
 }
 
 // DescribeFamily fetches the latest ACTIVE revision of a task definition
@@ -163,7 +172,36 @@ func DescribeFamily(ctx context.Context, ac *awsctx.Context, family string) (*Ta
 	}
 	details.Revision = td.Revision
 
+	if td.Cpu != nil {
+		details.CPU = *td.Cpu
+	}
+	if td.Memory != nil {
+		details.Memory = *td.Memory
+	}
+	details.NetworkMode = string(td.NetworkMode)
+	if td.TaskRoleArn != nil {
+		details.TaskRoleArn = *td.TaskRoleArn
+	}
+	if td.ExecutionRoleArn != nil {
+		details.ExecutionRoleArn = *td.ExecutionRoleArn
+	}
+	for _, compat := range td.RequiresCompatibilities {
+		details.RequiresCompatibilities = append(details.RequiresCompatibilities, string(compat))
+	}
+
 	for _, c := range td.ContainerDefinitions {
+		name := ""
+		if c.Name != nil {
+			name = *c.Name
+		}
+		image := ""
+		if c.Image != nil {
+			image = *c.Image
+		}
+		if name != "" {
+			details.ContainerImages = append(details.ContainerImages, name+"="+image)
+		}
+
 		if c.LogConfiguration == nil {
 			continue
 		}

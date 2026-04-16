@@ -59,13 +59,17 @@ func ListBuckets(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOption
 			if b.Name == nil {
 				continue
 			}
+			meta := map[string]string{
+				"region": ac.Region,
+			}
+			if b.CreationDate != nil {
+				meta["createdAt"] = fmt.Sprintf("%d", b.CreationDate.Unix())
+			}
 			resources = append(resources, core.Resource{
 				Type:        core.RTypeBucket,
 				Key:         *b.Name,
 				DisplayName: *b.Name,
-				Meta: map[string]string{
-					"region": ac.Region,
-				},
+				Meta:        meta,
 			})
 			if opts.Limit > 0 && len(resources) >= opts.Limit {
 				return resources, nil
