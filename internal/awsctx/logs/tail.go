@@ -6,6 +6,7 @@ package logs
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cwl "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
@@ -95,6 +96,48 @@ func StartLiveTail(parentCtx context.Context, ac *awsctx.Context, logGroupName, 
 		Err:    errCh,
 		cancel: cancel,
 	}, nil
+}
+
+// GetRecentEvents fetches the most recent `limit` log events from the
+// given log group, newest-last (chronological order). Used to
+// pre-populate the tail viewport with historical context before the
+// live-tail stream starts producing events.
+//
+// The call uses FilterLogEvents with no filter expression and a
+// startTime of now minus `lookback` to avoid scanning the entire
+// log group history. If the group doesn't exist or has no events in
+// the window, the returned slice is empty (no error).
+func GetRecentEvents(ctx context.Context, ac *awsctx.Context, logGroupName string, limit int, lookback time.Duration) ([]TailEvent, error) {
+	client := cwl.NewFromConfig(ac.Cfg)
+
+	startTime := time.Now().Add(-lookback).UnixMilli()
+	input := &cwl.FilterLogEventsInput{
+		LogGroupName: aws.String(logGroupName),
+		StartTime:    aws.Int64(startTime),
+		Limit:        aws.Int32(int32(limit)),
+		Interleaved:  aws.Bool(true),
+	}
+
+	out, err := client.FilterLogEvents(ctx, input)
+	if err != nil {
+		// Best-effort: log group might not exist yet, or caller might
+		// not have filter permission. Return empty, not an error.
+		return nil, nil
+	}
+
+	events := make([]TailEvent, 0, len(out.Events))
+	for _, ev := range out.Events {
+		msg := ""
+		if ev.Message != nil {
+			msg = *ev.Message
+		}
+		ts := int64(0)
+		if ev.Timestamp != nil {
+			ts = *ev.Timestamp
+		}
+		events = append(events, TailEvent{Timestamp: ts, Message: msg})
+	}
+	return events, nil
 }
 
 // ensure aws package is referenced so goimports doesn't drop it when

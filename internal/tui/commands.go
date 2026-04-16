@@ -156,9 +156,12 @@ func resolveLazyDetailsCmd(ac *awsctx.Context, p services.Provider, r core.Resou
 
 // msgTailStarted marks a successful StartLiveTail call. The handler
 // stashes the stream on the model and schedules the first tailLogsNextCmd.
+// historicalLines carries pre-formatted lines from GetRecentEvents so the
+// viewport isn't empty while the user waits for the first live event.
 type msgTailStarted struct {
-	stream *awslogs.TailStream
-	err    error
+	stream          *awslogs.TailStream
+	historicalLines []string
+	err             error
 }
 
 // msgTailEvent carries one streamed log event to the Update loop. An
@@ -169,13 +172,27 @@ type msgTailEvent struct {
 	eof bool
 }
 
-// tailLogsStartCmd opens the StartLiveTail stream for the given log
-// group. The returned tea.Cmd emits msgTailStarted; the Update handler
-// stores the stream and schedules the first msgTailEvent pump.
+// tailLogsStartCmd first fetches the most recent 50 log events from
+// the log group (last 30 minutes), then opens the StartLiveTail
+// stream. The historical events are pre-formatted and carried on
+// msgTailStarted so the handler can seed the viewport before the
+// first live event arrives. A visual divider line separates old logs
+// from new ones in the viewport.
 func tailLogsStartCmd(ac *awsctx.Context, group, account string) tea.Cmd {
 	return func() tea.Msg {
-		stream, err := awslogs.StartLiveTail(context.Background(), ac, group, account)
-		return msgTailStarted{stream: stream, err: err}
+		ctx := context.Background()
+
+		// 1. Fetch recent historical events (best-effort).
+		var historical []string
+		if events, err := awslogs.GetRecentEvents(ctx, ac, group, 50, 30*time.Minute); err == nil && len(events) > 0 {
+			for _, ev := range events {
+				historical = append(historical, formatTailLine(ev))
+			}
+		}
+
+		// 2. Open the live-tail stream.
+		stream, err := awslogs.StartLiveTail(ctx, ac, group, account)
+		return msgTailStarted{stream: stream, historicalLines: historical, err: err}
 	}
 }
 
