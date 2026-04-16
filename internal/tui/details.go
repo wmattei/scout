@@ -100,7 +100,7 @@ func renderDetails(m Model, width int) string {
 		// toast. The mapping from pendingConfirmType → action label
 		// is intentionally inline — if more confirmable actions are
 		// added, extend the switch here.
-		if m.pendingConfirm != confirmNone && i == actionSel {
+		if m.pendingConfirmFn != nil && i == actionSel {
 			line += "  " + styleConfirmHint.Render("(confirm: y/n)")
 		}
 
