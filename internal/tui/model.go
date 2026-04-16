@@ -30,6 +30,17 @@ const (
 	lazyStateResolved                        // command landed, m.lazyDetails populated
 )
 
+// pendingConfirmType identifies which destructive action is awaiting
+// a y/n confirmation. The zero value (confirmNone) means no
+// confirmation is pending.
+type pendingConfirmType int
+
+const (
+	confirmNone        pendingConfirmType = iota
+	confirmForceDeploy                    // ECS Force new Deployment
+	// Future: confirmDeleteParam, confirmDeleteFunction, etc.
+)
+
 // Model is the bubbletea model for the search + details views. Phase 2
 // introduces a Mode split: modeSearch runs the input bar + result list,
 // modeDetails runs the Details panel + Actions list for a chosen row.
@@ -75,8 +86,13 @@ type Model struct {
 	tailStream   *awslogs.TailStream // cancellable stream handle
 	tailViewport viewport.Model      // scrolling log viewport
 
-	// Confirmation state for destructive actions.
-	confirmingForceDeploy bool
+	// Generic confirmation gate for destructive actions. When
+	// pendingConfirm != confirmNone, updateDetails intercepts the
+	// next keystroke: 'y' dispatches the confirmed action, anything
+	// else cancels. Extensible via the pendingConfirmType enum so
+	// future destructive actions (delete param, delete function, etc.)
+	// reuse the same UX without adding per-action booleans.
+	pendingConfirm pendingConfirmType
 
 	// Tail filter — when non-empty, only lines containing this
 	// substring are shown in the viewport. The backend continues
