@@ -15,8 +15,16 @@ import (
 // ListFunctions lists Lambda functions in the region. ListFunctions does not
 // support a native name-prefix filter, so if opts.Prefix is set the filter
 // is applied client-side on the function name after each page is fetched.
+// When no limit is specified the adapter caps at 200 internally so the TUI's
+// service-scope first-entry path doesn't paginate through hundreds of
+// functions.
 func ListFunctions(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
 	client := awslambda.NewFromConfig(ac.Cfg)
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200 // sane default for interactive use
+	}
 
 	var resources []core.Resource
 	var nextMarker *string
@@ -26,17 +34,15 @@ func ListFunctions(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpti
 			Marker: nextMarker,
 		}
 		// The Lambda API uses MaxItems (int32) as page size cap.
-		if opts.Limit > 0 {
-			remaining := opts.Limit - len(resources)
-			if remaining <= 0 {
-				break
-			}
-			max := int32(remaining)
-			if max > 50 {
-				max = 50
-			}
-			input.MaxItems = &max
+		remaining := limit - len(resources)
+		if remaining <= 0 {
+			break
 		}
+		max := int32(remaining)
+		if max > 50 {
+			max = 50
+		}
+		input.MaxItems = &max
 
 		out, err := client.ListFunctions(ctx, input)
 		if err != nil {
@@ -78,7 +84,7 @@ func ListFunctions(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpti
 				Meta:        meta,
 			})
 
-			if opts.Limit > 0 && len(resources) >= opts.Limit {
+			if len(resources) >= limit {
 				break
 			}
 		}

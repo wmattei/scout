@@ -28,10 +28,14 @@ type ActionExecute func(m Model) (Model, tea.Cmd)
 
 // msgActionDone is emitted by any in-flight async action when its work
 // completes. The dispatcher in update.go handles the message by clearing
-// `inFlight` and showing the resulting toast.
+// `inFlight` and showing the resulting toast. If refetchDetails is true,
+// the handler also invalidates the lazyDetails cache for the current
+// resource and re-fires ResolveDetails so the Details panel shows fresh
+// data (used by SSM Update Value after PutParameter succeeds).
 type msgActionDone struct {
-	toast string
-	err   error
+	toast          string
+	err            error
+	refetchDetails bool
 }
 
 // ActionsFor returns the ordered action list for a resource type. The

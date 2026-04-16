@@ -20,6 +20,8 @@ const (
 	RTypeObject
 	RTypeEcsService
 	RTypeEcsTaskDefFamily
+	RTypeLambdaFunction
+	RTypeSSMParameter
 )
 
 // String returns a short machine name used in the SQLite schema's `type`
@@ -36,6 +38,10 @@ func (r ResourceType) String() string {
 		return "ecs_service"
 	case RTypeEcsTaskDefFamily:
 		return "ecs_taskdef"
+	case RTypeLambdaFunction:
+		return "lambda_function"
+	case RTypeSSMParameter:
+		return "ssm_parameter"
 	default:
 		return "unknown"
 	}

@@ -253,6 +253,10 @@ func parseType(s string) core.ResourceType {
 		return core.RTypeEcsService
 	case "ecs_taskdef":
 		return core.RTypeEcsTaskDefFamily
+	case "lambda_function":
+		return core.RTypeLambdaFunction
+	case "ssm_parameter":
+		return core.RTypeSSMParameter
 	default:
 		return core.RTypeBucket // defensive default; should never happen
 	}
