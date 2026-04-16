@@ -58,7 +58,7 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 			Key:         full,
 			DisplayName: lastSegmentWithSlash(full),
 			Meta: map[string]string{
-				"bucket": bucket,
+				MetaBucket: bucket,
 			},
 		})
 	}
@@ -72,12 +72,12 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 		if full == prefix {
 			continue
 		}
-		meta := map[string]string{"bucket": bucket}
+		meta := map[string]string{MetaBucket: bucket}
 		if o.Size != nil {
-			meta["size"] = fmt.Sprintf("%d", *o.Size)
+			meta[MetaSize] = fmt.Sprintf("%d", *o.Size)
 		}
 		if o.LastModified != nil {
-			meta["mtime"] = fmt.Sprintf("%d", o.LastModified.Unix())
+			meta[MetaMtime] = fmt.Sprintf("%d", o.LastModified.Unix())
 		}
 		out = append(out, core.Resource{
 			Type:        core.RTypeObject,

@@ -67,15 +67,15 @@ func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpt
 			}
 
 			meta := map[string]string{}
-			meta["type"] = string(p.Type)
+			meta[MetaType] = string(p.Type)
 			if p.LastModifiedDate != nil {
-				meta["lastModified"] = fmt.Sprintf("%d", p.LastModifiedDate.Unix())
+				meta[MetaLastModified] = fmt.Sprintf("%d", p.LastModifiedDate.Unix())
 			}
 			if p.Description != nil {
-				meta["description"] = *p.Description
+				meta[MetaDescription] = *p.Description
 			}
-			meta["tier"] = string(p.Tier)
-			meta["version"] = fmt.Sprintf("%d", p.Version)
+			meta[MetaTier] = string(p.Tier)
+			meta[MetaVersion] = fmt.Sprintf("%d", p.Version)
 
 			resources = append(resources, core.Resource{
 				Type:        core.RTypeSSMParameter,

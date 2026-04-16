@@ -58,23 +58,23 @@ func ListFunctions(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpti
 			}
 
 			meta := map[string]string{
-				"runtime": string(fn.Runtime),
+				MetaRuntime: string(fn.Runtime),
 			}
 			if fn.MemorySize != nil {
-				meta["memorySize"] = fmt.Sprintf("%d", *fn.MemorySize)
+				meta[MetaMemorySize] = fmt.Sprintf("%d", *fn.MemorySize)
 			}
 			if fn.Timeout != nil {
-				meta["timeout"] = fmt.Sprintf("%d", *fn.Timeout)
+				meta[MetaTimeout] = fmt.Sprintf("%d", *fn.Timeout)
 			}
 			if fn.LastModified != nil {
-				meta["lastModified"] = *fn.LastModified
+				meta[MetaLastModified] = *fn.LastModified
 			}
 			if fn.Handler != nil {
-				meta["handler"] = *fn.Handler
+				meta[MetaHandler] = *fn.Handler
 			}
-			meta["codeSize"] = fmt.Sprintf("%d", fn.CodeSize)
+			meta[MetaCodeSize] = fmt.Sprintf("%d", fn.CodeSize)
 			if fn.Description != nil {
-				meta["description"] = *fn.Description
+				meta[MetaDescription] = *fn.Description
 			}
 
 			resources = append(resources, core.Resource{

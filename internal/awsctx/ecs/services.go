@@ -96,13 +96,13 @@ func ListServices(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptio
 					continue
 				}
 				meta := map[string]string{
-					"cluster":    clusterShortName(cluster),
-					"clusterArn": cluster,
-					"launchType": string(svc.LaunchType),
-					"desired":    fmt.Sprintf("%d", svc.DesiredCount),
+					MetaCluster:    clusterShortName(cluster),
+					MetaClusterArn: cluster,
+					MetaLaunchType: string(svc.LaunchType),
+					MetaDesired:    fmt.Sprintf("%d", svc.DesiredCount),
 				}
 				if svc.TaskDefinition != nil {
-					meta["taskDefFamily"] = taskDefFamilyFromArn(*svc.TaskDefinition)
+					meta[MetaTaskDefFamily] = taskDefFamilyFromArn(*svc.TaskDefinition)
 				}
 				resources = append(resources, core.Resource{
 					Type:        core.RTypeEcsService,

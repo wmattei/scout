@@ -39,22 +39,22 @@ func (folderProvider) SortPriority() int { return 100 }
 func (folderProvider) IsTopLevel() bool  { return false }
 
 func (folderProvider) ARN(r core.Resource, _ map[string]string) string {
-	return fmt.Sprintf("arn:aws:s3:::%s/%s", r.Meta["bucket"], r.Key)
+	return fmt.Sprintf("arn:aws:s3:::%s/%s", r.Meta[MetaBucket], r.Key)
 }
 
 func (folderProvider) URI(r core.Resource) (string, bool) {
-	return fmt.Sprintf("s3://%s/%s", r.Meta["bucket"], r.Key), true
+	return fmt.Sprintf("s3://%s/%s", r.Meta[MetaBucket], r.Key), true
 }
 
 func (folderProvider) ConsoleURL(r core.Resource, region string, _ map[string]string) string {
-	bucket := r.Meta["bucket"]
+	bucket := r.Meta[MetaBucket]
 	prefix := r.Key
 	return fmt.Sprintf("https://s3.console.aws.amazon.com/s3/buckets/%s?region=%s&prefix=%s&showversions=false",
 		url.PathEscape(bucket), region, url.QueryEscape(prefix))
 }
 
 func (folderProvider) RenderMeta(r core.Resource) string {
-	if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+	if ts, ok := r.Meta[MetaMtime]; ok && ts != "" {
 		return formatUnixTimeOrEmpty(ts)
 	}
 	return ""

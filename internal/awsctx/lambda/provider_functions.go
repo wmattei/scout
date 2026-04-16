@@ -52,7 +52,7 @@ func (lambdaFunctionProvider) ConsoleURL(r core.Resource, region string, _ map[s
 
 // RenderMeta shows the runtime in the right-aligned meta column.
 func (lambdaFunctionProvider) RenderMeta(r core.Resource) string {
-	return r.Meta["runtime"]
+	return r.Meta[MetaRuntime]
 }
 
 // ListAll delegates to ListFunctions.
@@ -84,13 +84,13 @@ func (lambdaFunctionProvider) ResolveDetails(ctx context.Context, ac *awsctx.Con
 		return nil, err
 	}
 	out := map[string]string{
-		"runtime":      d.Runtime,
-		"memorySize":   fmt.Sprintf("%d", d.MemorySize),
-		"timeout":      fmt.Sprintf("%d", d.Timeout),
-		"lastModified": d.LastModified,
-		"handler":      d.Handler,
-		"codeSize":     fmt.Sprintf("%d", d.CodeSize),
-		"description":  d.Description,
+		MetaRuntime:      d.Runtime,
+		MetaMemorySize:   fmt.Sprintf("%d", d.MemorySize),
+		MetaTimeout:      fmt.Sprintf("%d", d.Timeout),
+		MetaLastModified: d.LastModified,
+		MetaHandler:      d.Handler,
+		MetaCodeSize:     fmt.Sprintf("%d", d.CodeSize),
+		MetaDescription:  d.Description,
 	}
 	if layersJSON := marshalStringSlice(d.Layers); layersJSON != "" {
 		out["layers"] = layersJSON
@@ -111,33 +111,33 @@ func (lambdaFunctionProvider) LogGroup(r core.Resource, _ map[string]string) str
 // while lazy data is still in-flight so the "resolving details…" placeholder
 // is shown.
 func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string) []services.DetailRow {
-	if lazy == nil || lazy["runtime"] == "" {
+	if lazy == nil || lazy[MetaRuntime] == "" {
 		return nil
 	}
 
 	rows := []services.DetailRow{
-		{Label: "Runtime", Value: lazy["runtime"]},
-		{Label: "Handler", Value: lazy["handler"]},
+		{Label: "Runtime", Value: lazy[MetaRuntime]},
+		{Label: "Handler", Value: lazy[MetaHandler]},
 	}
 
-	if mem := lazy["memorySize"]; mem != "" {
+	if mem := lazy[MetaMemorySize]; mem != "" {
 		rows = append(rows, services.DetailRow{Label: "Memory", Value: mem + " MB"})
 	}
-	if tmo := lazy["timeout"]; tmo != "" {
+	if tmo := lazy[MetaTimeout]; tmo != "" {
 		rows = append(rows, services.DetailRow{Label: "Timeout", Value: tmo + "s"})
 	}
 
-	if cs := lazy["codeSize"]; cs != "" {
+	if cs := lazy[MetaCodeSize]; cs != "" {
 		var sz int64
 		fmt.Sscanf(cs, "%d", &sz)
 		rows = append(rows, services.DetailRow{Label: "Code size", Value: humanBytes(sz)})
 	}
 
-	if lm := lazy["lastModified"]; lm != "" {
+	if lm := lazy[MetaLastModified]; lm != "" {
 		rows = append(rows, services.DetailRow{Label: "Modified", Value: formatLastModified(lm)})
 	}
 
-	if desc := lazy["description"]; desc != "" {
+	if desc := lazy[MetaDescription]; desc != "" {
 		rows = append(rows, services.DetailRow{Label: "Desc", Value: desc})
 	}
 

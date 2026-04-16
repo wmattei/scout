@@ -54,7 +54,7 @@ func (bucketProvider) ConsoleURL(r core.Resource, region string, _ map[string]st
 }
 
 func (bucketProvider) RenderMeta(r core.Resource) string {
-	return r.Meta["region"]
+	return r.Meta[MetaRegion]
 }
 
 func (bucketProvider) TabComplete(_ search.Scope, r core.Resource) string {
@@ -109,7 +109,7 @@ func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 	}
 
 	rows := []services.DetailRow{
-		{Label: "Region", Value: r.Meta["region"]},
+		{Label: "Region", Value: r.Meta[MetaRegion]},
 	}
 
 	if ts := lazy["createdAt"]; ts != "" {
