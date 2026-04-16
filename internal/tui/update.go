@@ -210,6 +210,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tailStream = msg.stream
 		m.inFlight = false
 		m.inFlightLabel = ""
+		// Seed the viewport with historical log lines so the user
+		// sees recent context immediately. A visual divider separates
+		// the fetched history from the incoming live stream.
+		if len(msg.historicalLines) > 0 {
+			m.tailLines = append(m.tailLines, msg.historicalLines...)
+			m.tailLines = append(m.tailLines, strings.Repeat("─", 40)+" live ─▶")
+		}
+		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
+		m.tailViewport.GotoBottom()
 		m.toast = newToast("tailing "+m.tailGroup, 2*time.Second)
 		return m, tailLogsNextCmd(msg.stream)
 
