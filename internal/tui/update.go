@@ -394,6 +394,17 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateDetails handles key events while in modeDetails.
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Confirmation gate for destructive actions. While active, only
+	// 'y' proceeds; everything else cancels.
+	if m.confirmingForceDeploy {
+		if msg.String() == "y" {
+			return doForceDeploy(m)
+		}
+		m.confirmingForceDeploy = false
+		m.toast = newToast("cancelled", 2*time.Second)
+		return m, nil
+	}
+
 	actions := ActionsFor(m.detailsResource.Type)
 	switch msg.String() {
 	case "ctrl+p":

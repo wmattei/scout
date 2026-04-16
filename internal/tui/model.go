@@ -75,6 +75,9 @@ type Model struct {
 	tailStream   *awslogs.TailStream // cancellable stream handle
 	tailViewport viewport.Model      // scrolling log viewport
 
+	// Confirmation state for destructive actions.
+	confirmingForceDeploy bool
+
 	// Tail filter — when non-empty, only lines containing this
 	// substring are shown in the viewport. The backend continues
 	// collecting every line into tailLines so clearing the filter
