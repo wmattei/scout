@@ -61,5 +61,5 @@ func arnForDetails(r core.Resource, m Model) string {
 			return a
 		}
 	}
-	return r.ARN()
+	return ""
 }

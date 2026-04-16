@@ -4,7 +4,6 @@
 package core
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -101,27 +100,3 @@ func LookupAlias(alias string) (ResourceType, bool) {
 	return t, ok
 }
 
-// ARN returns a canonical AWS ARN for the resource. For folders and objects
-// a pseudo-ARN of the form arn:aws:s3:::<bucket>/<key> is used so the
-// details panel can always show an "ARN" row. Phase 1 only calls this for
-// buckets, services, and task def families — the folder/object branches are
-// pre-wired for Phase 2.
-func (r Resource) ARN() string {
-	switch r.Type {
-	case RTypeBucket:
-		return fmt.Sprintf("arn:aws:s3:::%s", r.Key)
-	case RTypeFolder, RTypeObject:
-		bucket := r.Meta["bucket"]
-		return fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, r.Key)
-	case RTypeEcsService:
-		// Key is the full service ARN for ecs services.
-		return r.Key
-	case RTypeEcsTaskDefFamily:
-		// Latest revision is resolved lazily in later phases; for Phase 1
-		// we surface the family name so the details panel (when added) can
-		// show "…resolving" until DescribeTaskDefinition returns.
-		return fmt.Sprintf("arn:aws:ecs:*:*:task-definition/%s", r.Key)
-	default:
-		return ""
-	}
-}

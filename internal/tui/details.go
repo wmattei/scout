@@ -134,7 +134,7 @@ func detailsARN(r core.Resource, m Model) string {
 			return a
 		}
 	}
-	return r.ARN()
+	return ""
 }
 
 // writeField appends a single "  Label    Value" row to b.
