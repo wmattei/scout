@@ -15,6 +15,7 @@ type ToastLevel int
 const (
 	ToastInfo ToastLevel = iota
 	ToastError
+	ToastSuccess
 )
 
 // Toast is a transient bottom-centered overlay displayed over whatever
@@ -32,6 +33,17 @@ func newToast(message string, dur time.Duration) Toast {
 		Message:   message,
 		ExpiresAt: time.Now().Add(dur),
 		Level:     ToastInfo,
+	}
+}
+
+// newSuccessToast returns a green success-level Toast. Used for
+// confirmations of completed destructive actions so the positive
+// outcome is visually distinct from the neutral info toast.
+func newSuccessToast(message string) Toast {
+	return Toast{
+		Message:   message,
+		ExpiresAt: time.Now().Add(4 * time.Second),
+		Level:     ToastSuccess,
 	}
 }
 
@@ -64,8 +76,11 @@ func renderToast(t Toast, width int) string {
 		inner = inner[:width-padding-1] + "…"
 	}
 	style := styleToast
-	if t.Level == ToastError {
+	switch t.Level {
+	case ToastError:
 		style = styleToastError
+	case ToastSuccess:
+		style = styleToastSuccess
 	}
 	boxed := style.Render(inner)
 	left := (width - lipglossWidth(boxed)) / 2

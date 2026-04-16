@@ -116,6 +116,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inFlightLabel = ""
 		if msg.err != nil {
 			m.toast = newErrorToast(msg.toast)
+		} else if msg.success {
+			m.toast = newSuccessToast(msg.toast)
 		} else {
 			m.toast = newToast(msg.toast, 4*time.Second)
 		}

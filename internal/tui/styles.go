@@ -38,7 +38,12 @@ var (
 		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFFFF"}).
 		Background(lipgloss.AdaptiveColor{Light: "#AF0000", Dark: "#870000"}).
 		Padding(0, 1)
-	styleDivider   = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
+	styleToastSuccess = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFFFF"}).
+		Background(lipgloss.AdaptiveColor{Light: "#005F00", Dark: "#005F00"}).
+		Padding(0, 1)
+	styleDivider = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
 )
 
 // padTag right-pads a tag label to a fixed width so names align.

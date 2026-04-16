@@ -96,6 +96,16 @@ func renderDetails(m Model, width int) string {
 			indi = styleSelIndi.Render("▸ ")
 		}
 		line := fmt.Sprintf("%s%d. %s", indi, i+1, a.Label)
+
+		// Show a confirmation indicator next to the action that is
+		// waiting for y/n, so the user notices even if they miss the
+		// toast. The mapping from pendingConfirmType → action label
+		// is intentionally inline — if more confirmable actions are
+		// added, extend the switch here.
+		if m.pendingConfirm != confirmNone && i == actionSel {
+			line += "  " + styleConfirmHint.Render("(confirm: y/n)")
+		}
+
 		if i == actionSel {
 			b.WriteString(styleRowSel.Width(width).Render(line))
 		} else {
@@ -167,3 +177,9 @@ var styleDetailsHeader = lipgloss.NewStyle().
 // styleDetailsLabel dims the field label so values read brighter.
 var styleDetailsLabel = lipgloss.NewStyle().
 	Foreground(lipgloss.AdaptiveColor{Light: "#767676", Dark: "#8A8A8A"})
+
+// styleConfirmHint renders the "(confirm: y/n)" badge next to an
+// action that is awaiting destructive-action confirmation.
+var styleConfirmHint = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.AdaptiveColor{Light: "#AF8700", Dark: "#FFD75F"})

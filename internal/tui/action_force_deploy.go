@@ -59,6 +59,6 @@ func forceDeployCmd(ac *awsctx.Context, clusterArn, serviceArn string) tea.Cmd {
 				err:   err,
 			}
 		}
-		return msgActionDone{toast: "deployment triggered", err: nil}
+		return msgActionDone{toast: "deployment triggered", err: nil, success: true}
 	}
 }
