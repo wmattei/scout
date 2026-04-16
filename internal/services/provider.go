@@ -152,6 +152,20 @@ type Provider interface {
 	// Return nil AND the in-flight state signals the view to render
 	// a centered "resolving details…" placeholder.
 	DetailRows(r core.Resource, lazy map[string]string) []DetailRow
+
+	// Actions returns the ordered list of action definitions for this
+	// resource type. The TUI maps each ActionDef.ID to an Execute
+	// closure via a separate registry. Return nil for types that
+	// have no actions.
+	Actions() []ActionDef
+}
+
+// ActionDef describes an action the TUI can offer for a resource of
+// this type. ID is a short machine name used as the key in the TUI's
+// Execute registry. Label is the user-visible string.
+type ActionDef struct {
+	ID    string
+	Label string
 }
 
 // DetailRow is one row in the Details panel's scrollable body.
@@ -195,3 +209,5 @@ func (BaseProvider) AlwaysRefresh() bool { return false }
 func (BaseProvider) DetailRows(core.Resource, map[string]string) []DetailRow {
 	return nil
 }
+
+func (BaseProvider) Actions() []ActionDef { return nil }
