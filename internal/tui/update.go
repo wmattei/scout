@@ -226,7 +226,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tailLines = append(m.tailLines, msg.historicalLines...)
 			m.tailLines = append(m.tailLines, strings.Repeat("─", 40)+" live ─▶")
 		}
-		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
+		m.rebuildTailViewport()
 		m.tailViewport.GotoBottom()
 		m.toast = newToast("tailing "+m.tailGroup, 2*time.Second)
 		return m, tailLogsNextCmd(msg.stream)
@@ -249,7 +249,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// up to read history. This prevents new events from yanking
 		// the viewport away while the user is inspecting older lines.
 		wasAtBottom := m.tailViewport.AtBottom()
-		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
+		m.rebuildTailViewport()
 		if wasAtBottom {
 			m.tailViewport.GotoBottom()
 		}
@@ -644,6 +644,25 @@ func computeResults(query string, mem *index.Memory) []search.Result {
 	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
 }
 
+// rebuildTailViewport recomputes the viewport content from m.tailLines
+// applying the current tailFilter. Called from msgTailEvent handler
+// and from the filter key handlers so both paths produce consistent
+// output. Returns the model (by value) so the caller can chain.
+func (m *Model) rebuildTailViewport() {
+	if m.tailFilter == "" {
+		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
+	} else {
+		var filtered []string
+		lower := strings.ToLower(m.tailFilter)
+		for _, line := range m.tailLines {
+			if strings.Contains(strings.ToLower(line), lower) {
+				filtered = append(filtered, line)
+			}
+		}
+		m.tailViewport.SetContent(strings.Join(filtered, "\n"))
+	}
+}
+
 // spinTickCmd schedules the next spinner frame.
 func spinTickCmd() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return msgSpinTick{} })
@@ -676,6 +695,45 @@ func formatTailLine(ev awslogs.TailEvent) string {
 // stream and returns to the Details view; Ctrl+C quits the program. All
 // other keys are forwarded to the viewport so the user can scroll.
 func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// --- Filter editing mode: the user pressed "/" and is typing a
+	// filter string. Every printable key appends; Backspace trims;
+	// Enter/Esc commits the filter (Esc also clears it). While
+	// editing, scroll and other keys are suppressed.
+	if m.tailFilterEditing {
+		switch msg.String() {
+		case "enter":
+			// Commit the current filter text and leave editing mode.
+			m.tailFilterEditing = false
+			m.rebuildTailViewport()
+			m.tailViewport.GotoBottom()
+			return m, nil
+		case "esc":
+			// Clear the filter and leave editing mode.
+			m.tailFilter = ""
+			m.tailFilterEditing = false
+			m.rebuildTailViewport()
+			m.tailViewport.GotoBottom()
+			return m, nil
+		case "backspace":
+			if len(m.tailFilter) > 0 {
+				r := []rune(m.tailFilter)
+				m.tailFilter = string(r[:len(r)-1])
+				m.rebuildTailViewport()
+				m.tailViewport.GotoBottom()
+			}
+			return m, nil
+		}
+		// Printable runes append to the filter.
+		if len(msg.Runes) == 1 && msg.Runes[0] >= 32 {
+			m.tailFilter += string(msg.Runes[0])
+			m.rebuildTailViewport()
+			m.tailViewport.GotoBottom()
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// --- Normal tail mode ---
 	switch msg.String() {
 	case "ctrl+c":
 		if m.tailStream != nil {
@@ -684,6 +742,14 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
+		// If a filter is active, first press of Esc clears it.
+		// Second press (or if no filter) exits the tail view.
+		if m.tailFilter != "" {
+			m.tailFilter = ""
+			m.rebuildTailViewport()
+			m.tailViewport.GotoBottom()
+			return m, nil
+		}
 		if m.tailStream != nil {
 			m.tailStream.Close()
 			m.tailStream = nil
@@ -692,9 +758,12 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toast = newToast("stopped tailing", 2*time.Second)
 		return m, nil
 	case "ctrl+down":
-		// Jump to the bottom and re-engage auto-follow so new events
-		// scroll the viewport automatically again.
+		// Jump to the bottom and re-engage auto-follow.
 		m.tailViewport.GotoBottom()
+		return m, nil
+	case "/":
+		// Enter filter editing mode.
+		m.tailFilterEditing = true
 		return m, nil
 	}
 	// Forward scroll keys to the viewport.

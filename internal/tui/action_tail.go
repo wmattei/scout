@@ -39,6 +39,8 @@ func execTailLogs(m Model) (Model, tea.Cmd) {
 	m.mode = modeTailLogs
 	m.tailGroup = group
 	m.tailLines = nil
+	m.tailFilter = ""
+	m.tailFilterEditing = false
 	m.tailViewport.SetContent("")
 	m.tailViewport.GotoTop()
 	m.inFlight = true
