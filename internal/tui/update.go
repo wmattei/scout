@@ -396,18 +396,15 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateDetails handles key events while in modeDetails.
 func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Generic confirmation gate for destructive actions. While a
-	// confirmation is pending, 'y' dispatches the confirmed action;
-	// any other key cancels. Extensible via the switch on
-	// m.pendingConfirm.
-	if m.pendingConfirm != confirmNone {
+	// Generic confirmation gate for destructive actions. When a callback
+	// is pending, 'y' fires it; any other key cancels.
+	if m.pendingConfirmFn != nil {
 		if msg.String() == "y" {
-			switch m.pendingConfirm {
-			case confirmForceDeploy:
-				return doForceDeploy(m)
-			}
+			fn := m.pendingConfirmFn
+			m.pendingConfirmFn = nil
+			return fn(m)
 		}
-		m.pendingConfirm = confirmNone
+		m.pendingConfirmFn = nil
 		m.toast = newToast("cancelled", 2*time.Second)
 		return m, nil
 	}

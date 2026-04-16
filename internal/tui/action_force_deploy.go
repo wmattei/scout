@@ -29,7 +29,9 @@ func execForceDeploy(m Model) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.pendingConfirm = confirmForceDeploy
+	m.pendingConfirmFn = func(m Model) (Model, tea.Cmd) {
+		return doForceDeploy(m)
+	}
 	m.toast = newToast("force new deployment on "+m.detailsResource.DisplayName+"? press y to confirm, any other key to cancel", 30*time.Second)
 	return m, nil
 }
@@ -39,7 +41,6 @@ func execForceDeploy(m Model) (Model, tea.Cmd) {
 func doForceDeploy(m Model) (Model, tea.Cmd) {
 	cluster := m.detailsResource.Meta["clusterArn"] // see ecs.MetaClusterArn
 	service := m.detailsResource.Key
-	m.pendingConfirm = confirmNone
 	m.inFlight = true
 	m.inFlightLabel = "forcing new deployment…"
 	m.toast = newToast("forcing new deployment…", 10*time.Second)
