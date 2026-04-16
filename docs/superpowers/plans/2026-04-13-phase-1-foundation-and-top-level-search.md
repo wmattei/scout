@@ -1,10 +1,10 @@
-# better-aws-cli — Phase 1: Foundation & Top-Level Search
+# scout — Phase 1: Foundation & Top-Level Search
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Running `better-aws` opens a TUI showing a fuzzy-searchable list of the caller's S3 buckets, ECS services, and ECS task-definition families. Results come from a local SQLite cache for instant first paint, and are refreshed in the background via stale-while-revalidate. An activity spinner animates whenever AWS API calls are in flight. `↑`/`↓` moves selection, `Ctrl+C` quits.
+**Goal:** Running `scout` opens a TUI showing a fuzzy-searchable list of the caller's S3 buckets, ECS services, and ECS task-definition families. Results come from a local SQLite cache for instant first paint, and are refreshed in the background via stale-while-revalidate. An activity spinner animates whenever AWS API calls are in flight. `↑`/`↓` moves selection, `Ctrl+C` quits.
 
-**Architecture:** A single foreground `charmbracelet/bubbletea` program. Pure-Go SQLite (`modernc.org/sqlite`) for persistence, one DB file per `(profile, region)` pair under `~/.cache/better-aws/`. An in-memory index built on load; result lists are computed via `sahilm/fuzzy`. AWS calls use `aws-sdk-go-v2` with an activity-counting middleware that drives the spinner. Results flow from background goroutines to the UI via `tea.Msg`.
+**Architecture:** A single foreground `charmbracelet/bubbletea` program. Pure-Go SQLite (`modernc.org/sqlite`) for persistence, one DB file per `(profile, region)` pair under `~/.cache/scout/`. An in-memory index built on load; result lists are computed via `sahilm/fuzzy`. AWS calls use `aws-sdk-go-v2` with an activity-counting middleware that drives the spinner. Results flow from background goroutines to the UI via `tea.Msg`.
 
 **Tech Stack:** Go 1.22+, `charmbracelet/bubbletea`, `charmbracelet/lipgloss`, `charmbracelet/bubbles`, `aws-sdk-go-v2` (s3, ecs, sts, config), `modernc.org/sqlite`, `sahilm/fuzzy`.
 
@@ -17,11 +17,11 @@
 
 Enter, Tab, `Ctrl+P`, `Ctrl+R`, and `Esc` are intentionally no-ops in this phase (or wired to minimal placeholder behavior called out per task).
 
-**Reference spec:** `docs/superpowers/specs/2026-04-13-better-aws-cli-v0-design.md`.
+**Reference spec:** `docs/superpowers/specs/2026-04-13-scout-v0-design.md`.
 
-**Working directory for all tasks:** `/Users/wagnermattei/www/pied-piper/better-aws-cli`. Every shell command below assumes this CWD.
+**Working directory for all tasks:** `/Users/wmattei/www/pied-piper/scout`. Every shell command below assumes this CWD.
 
-**Testing policy for this phase:** Per project convention, no automated tests at v0. Every task ends with a manual verification step (usually `go build ./... && ./bin/better-aws` or a quick terminal run) followed by `git commit`.
+**Testing policy for this phase:** Per project convention, no automated tests at v0. Every task ends with a manual verification step (usually `go build ./... && ./bin/scout` or a quick terminal run) followed by `git commit`.
 
 ---
 
@@ -30,14 +30,14 @@ Enter, Tab, `Ctrl+P`, `Ctrl+R`, and `Esc` are intentionally no-ops in this phase
 **Files:**
 - Create: `go.mod`
 - Create: `.gitignore`
-- Create: `cmd/better-aws/main.go`
+- Create: `cmd/scout/main.go`
 - Create: `README.md`
 
 - [ ] **Step 1: Initialize the Go module**
 
 Run:
 ```bash
-go mod init github.com/wagnermattei/better-aws-cli
+go mod init github.com/wmattei/scout
 ```
 
 Expected: creates `go.mod` with the module path and a Go directive (`go 1.22` or later — the exact version string matches the installed toolchain).
@@ -64,9 +64,9 @@ Create `.gitignore` with:
 /tmp/
 ```
 
-- [ ] **Step 3: Create a stub `cmd/better-aws/main.go`**
+- [ ] **Step 3: Create a stub `cmd/scout/main.go`**
 
-Create `cmd/better-aws/main.go`:
+Create `cmd/scout/main.go`:
 ```go
 package main
 
@@ -76,7 +76,7 @@ import "fmt"
 const Version = "0.0.0-phase1"
 
 func main() {
-	fmt.Printf("better-aws %s (scaffold — Phase 1 in progress)\n", Version)
+	fmt.Printf("scout %s (scaffold — Phase 1 in progress)\n", Version)
 }
 ```
 
@@ -84,23 +84,23 @@ func main() {
 
 Create `README.md`:
 ```markdown
-# better-aws
+# scout
 
 Interactive terminal CLI for navigating AWS infrastructure. Fuzzy-searchable cache over S3 buckets, ECS services, and task definitions; live prefix search into S3 bucket contents.
 
-**Status:** v0 in development — see `docs/superpowers/specs/2026-04-13-better-aws-cli-v0-design.md` for the spec and `docs/superpowers/plans/` for the phase plans.
+**Status:** v0 in development — see `docs/superpowers/specs/2026-04-13-scout-v0-design.md` for the spec and `docs/superpowers/plans/` for the phase plans.
 
 ## Build
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
-./bin/better-aws
+go build -o bin/scout ./cmd/scout
+./bin/scout
 ```
 
 ## Install
 
 ```bash
-go install ./cmd/better-aws
+go install ./cmd/scout
 ```
 ```
 
@@ -108,16 +108,16 @@ go install ./cmd/better-aws
 
 Run:
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
-./bin/better-aws
+go build -o bin/scout ./cmd/scout
+./bin/scout
 ```
 
-Expected: prints `better-aws 0.0.0-phase1 (scaffold — Phase 1 in progress)` and exits 0.
+Expected: prints `scout 0.0.0-phase1 (scaffold — Phase 1 in progress)` and exits 0.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add go.mod .gitignore cmd/better-aws/main.go README.md
+git add go.mod .gitignore cmd/scout/main.go README.md
 git commit -m "chore: scaffold Go module, binary entry point, gitignore"
 ```
 
@@ -139,7 +139,7 @@ package core
 
 import "fmt"
 
-// ResourceType enumerates the kinds of AWS resources better-aws knows about.
+// ResourceType enumerates the kinds of AWS resources scout knows about.
 // Phase 1 only uses RTypeBucket, RTypeEcsService, and RTypeEcsTaskDefFamily.
 // RTypeFolder and RTypeObject exist for later phases and are declared here so
 // the TUI and index layers can pattern-match on the complete set.
@@ -275,7 +275,7 @@ Create `internal/index/db.go`:
 ```go
 // Package index owns the on-disk SQLite cache and the in-memory index that
 // serves the TUI. DBs are one file per (profile, region) pair, living under
-// $XDG_CACHE_HOME/better-aws (fallback: $HOME/.cache/better-aws).
+// $XDG_CACHE_HOME/scout (fallback: $HOME/.cache/scout).
 package index
 
 import (
@@ -288,7 +288,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // schemaVersion is bumped whenever the DDL changes. The cache is rebuildable,
@@ -535,13 +535,13 @@ func parseType(s string) core.ResourceType {
 
 func cacheDir() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "better-aws"), nil
+		return filepath.Join(xdg, "scout"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving home dir: %w", err)
 	}
-	return filepath.Join(home, ".cache", "better-aws"), nil
+	return filepath.Join(home, ".cache", "scout"), nil
 }
 ```
 
@@ -578,7 +578,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Memory is the in-RAM, read-mostly view of the cache that the TUI searches
@@ -902,7 +902,7 @@ func (a *Activity) finish() {
 func (a *Activity) Attach(cfg *aws.Config) {
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		return stack.Initialize.Add(
-			middleware.InitializeMiddlewareFunc("better-aws/activity",
+			middleware.InitializeMiddlewareFunc("scout/activity",
 				func(ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
 					op := middleware.GetOperationName(ctx)
 					a.start(op)
@@ -950,7 +950,7 @@ go get github.com/aws/aws-sdk-go-v2/service/s3
 
 Create `internal/awsctx/s3/buckets.go`:
 ```go
-// Package s3 contains better-aws's thin wrappers around the AWS S3 SDK.
+// Package s3 contains scout's thin wrappers around the AWS S3 SDK.
 // Each function returns []core.Resource ready to hand to the index layer.
 package s3
 
@@ -960,8 +960,8 @@ import (
 
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListBuckets returns every bucket visible to the current caller. One call,
@@ -1026,7 +1026,7 @@ go get github.com/aws/aws-sdk-go-v2/service/ecs
 
 Create `internal/awsctx/ecs/services.go`:
 ```go
-// Package ecs contains better-aws's thin wrappers around the AWS ECS SDK.
+// Package ecs contains scout's thin wrappers around the AWS ECS SDK.
 package ecs
 
 import (
@@ -1036,8 +1036,8 @@ import (
 
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListServices walks every cluster in the region and returns one Resource
@@ -1173,8 +1173,8 @@ import (
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListTaskDefFamilies returns one Resource per active task-definition family.
@@ -1262,7 +1262,7 @@ package search
 import (
 	"github.com/sahilm/fuzzy"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Result is one row in a search result list, with enough metadata for the
@@ -1362,7 +1362,7 @@ package tui
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // adaptive pair helper.
@@ -1465,8 +1465,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // renderResults returns a string containing every visible row, one per line.
@@ -1654,7 +1654,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // spinnerFrames is a simple braille-dot spinner. Index % len picks a frame.
@@ -1747,10 +1747,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Model is the bubbletea model for the search view. Phase 1 only has the
@@ -1816,7 +1816,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Custom messages emitted by commands.
@@ -2003,12 +2003,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	awsecs "github.com/wmattei/scout/internal/awsctx/ecs"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // initialResultsCmd produces the first render's results from whatever the
@@ -2114,13 +2114,13 @@ git commit -m "feat(tui): add bubbletea model, update, view, and background comm
 ## Task 16: Wire `main.go` to the TUI
 
 **Files:**
-- Modify: `cmd/better-aws/main.go`
+- Modify: `cmd/scout/main.go`
 
-- [ ] **Step 1: Replace `cmd/better-aws/main.go`**
+- [ ] **Step 1: Replace `cmd/scout/main.go`**
 
-Overwrite `cmd/better-aws/main.go`:
+Overwrite `cmd/scout/main.go`:
 ```go
-// Command better-aws is an interactive TUI for navigating AWS resources.
+// Command scout is an interactive TUI for navigating AWS resources.
 // Phase 1 covers foundation + top-level search only; later phases add
 // drill-in navigation, detail views, actions, and a profile switcher.
 package main
@@ -2132,16 +2132,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/tui"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/tui"
 )
 
 const Version = "0.0.0-phase1"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -2188,16 +2188,16 @@ func run() error {
 
 Run:
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
-Expected: produces `bin/better-aws`.
+Expected: produces `bin/scout`.
 
 - [ ] **Step 3: Smoke-run the binary**
 
 Run:
 ```bash
-./bin/better-aws
+./bin/scout
 ```
 
 **Expected UI** (assuming valid AWS credentials in the shell):
@@ -2217,7 +2217,7 @@ Run:
 - [ ] **Step 4: Commit**
 
 ```bash
-git add cmd/better-aws/main.go
+git add cmd/scout/main.go
 git commit -m "feat(cmd): wire bubbletea program to AWS, SQLite, and search layers"
 ```
 
@@ -2279,7 +2279,7 @@ Replace the body of the returned function in `refreshTopLevelCmd` with:
 
 Run:
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: no output, binary produced.
@@ -2288,14 +2288,14 @@ Expected: no output, binary produced.
 
 Run:
 ```bash
-./bin/better-aws
+./bin/scout
 ```
 
 Expected behavior:
 1. On launch, the list is either empty (first run, cache is cold) or populated from the last run's SQLite cache (subsequent runs).
 2. The activity spinner animates as refresh runs.
 3. When refresh completes, `msgResourcesUpdated` fires, results are recomputed against the in-memory index, and the list updates in place without flicker.
-4. Second launch is instant — the cache loads from `~/.cache/better-aws/<profile>__<region>.db` before any AWS calls happen.
+4. Second launch is instant — the cache loads from `~/.cache/scout/<profile>__<region>.db` before any AWS calls happen.
 
 If refresh is not updating the list: check that `persist` is being called (add a temporary `fmt.Fprintln(os.Stderr, …)` under it, re-run, remove).
 
@@ -2366,7 +2366,7 @@ The complete `tea.KeyMsg` block should read:
 
 Run:
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: no output.
@@ -2375,7 +2375,7 @@ Expected: no output.
 
 Run:
 ```bash
-./bin/better-aws
+./bin/scout
 ```
 
 Resize the terminal to fewer than 60 columns. The entire frame should collapse to a centered red error message. Resize back and the normal UI should reappear. Ctrl+C still quits.
@@ -2399,9 +2399,9 @@ This task confirms Phase 1 is done. Run each of the following and fix any issues
 
 Run:
 ```bash
-rm -rf ~/.cache/better-aws
-go build -o bin/better-aws ./cmd/better-aws
-./bin/better-aws
+rm -rf ~/.cache/scout
+go build -o bin/scout ./cmd/scout
+./bin/scout
 ```
 
 Verify:
@@ -2414,7 +2414,7 @@ Verify:
 
 Run:
 ```bash
-./bin/better-aws
+./bin/scout
 ```
 
 Verify:
@@ -2442,11 +2442,11 @@ Resize the terminal wider / narrower while the tool is running. Verify:
 
 Run:
 ```bash
-AWS_PROFILE=nonexistent ./bin/better-aws
+AWS_PROFILE=nonexistent ./bin/scout
 ```
 
 Verify:
-- Exits 1 to the shell with a message like `better-aws: loading AWS config (profile=nonexistent): …` on stderr. The TUI must not launch with invalid credentials — this is the Phase 1 equivalent of the "no silent failures" rule.
+- Exits 1 to the shell with a message like `scout: loading AWS config (profile=nonexistent): …` on stderr. The TUI must not launch with invalid credentials — this is the Phase 1 equivalent of the "no silent failures" rule.
 
 - [ ] **Step 6: Reserved-key scenario**
 

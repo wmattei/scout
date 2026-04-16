@@ -3,8 +3,8 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // Action is a single selectable entry in the Details view's Actions list.

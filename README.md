@@ -1,4 +1,4 @@
-# better-aws-cli
+# scout
 
 Interactive terminal TUI for navigating and managing AWS infrastructure. Fuzzy-searchable cache over S3 buckets, ECS services/task definitions, Lambda functions, and SSM parameters — with live prefix search into S3 bucket contents, real-time log tailing, and interactive actions (deploy, invoke, update).
 
@@ -13,30 +13,30 @@ Interactive terminal TUI for navigating and managing AWS infrastructure. Fuzzy-s
 - **ECS Force Deploy** — trigger a new deployment with a y/n confirmation gate
 - **Profile/region switcher** — hot-swap AWS context with `Ctrl+P` without restarting
 - **Persistent cache** — SQLite per `(profile, region)`, populated by `preload` or lazy on first scope entry
-- **Debug log** — `BETTER_AWS_DEBUG=1` writes structured JSON to `~/.cache/better-aws/debug.log`
+- **Debug log** — `SCOUT_DEBUG=1` writes structured JSON to `~/.cache/scout/debug.log`
 
 ## Install
 
 ```bash
-go install github.com/wagnermattei/better-aws-cli/cmd/better-aws@latest
+go install github.com/wmattei/scout/cmd/scout@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/wagnermattei/better-aws-cli
-cd better-aws-cli
-go build -o bin/better-aws ./cmd/better-aws
+git clone https://github.com/wmattei/scout
+cd scout
+go build -o bin/scout ./cmd/scout
 ```
 
 ## Quick start
 
 ```bash
 # 1. Populate the cache (run once per profile/region)
-better-aws preload all
+scout preload all
 
 # 2. Launch the TUI
-better-aws
+scout
 
 # 3. Narrow by service scope
 #    Type in the search bar:  ecs:my-service
@@ -75,18 +75,18 @@ better-aws
 |---|---|
 | `AWS_PROFILE` | AWS credentials profile to use |
 | `AWS_REGION` | AWS region override |
-| `BETTER_AWS_DEBUG=1` | Enable debug log at `~/.cache/better-aws/debug.log` |
+| `SCOUT_DEBUG=1` | Enable debug log at `~/.cache/scout/debug.log` |
 | `EDITOR` | Editor for Lambda Run payloads and SSM Update Value |
 
 ## Cache
 
-SQLite databases at `~/.cache/better-aws/` (or `$XDG_CACHE_HOME/better-aws/`), one file per `(profile, region)` pair. No automatic expiration — use `better-aws cache clear` to wipe everything.
+SQLite databases at `~/.cache/scout/` (or `$XDG_CACHE_HOME/scout/`), one file per `(profile, region)` pair. No automatic expiration — use `scout cache clear` to wipe everything.
 
 ```bash
-better-aws preload all            # preload all services
-better-aws preload s3             # preload only S3 buckets
-better-aws preload --limit 50 ecs # preload first 50 ECS services
-better-aws cache clear            # wipe the cache
+scout preload all            # preload all services
+scout preload s3             # preload only S3 buckets
+scout preload --limit 50 ecs # preload first 50 ECS services
+scout cache clear            # wipe the cache
 ```
 
 ## Contributing

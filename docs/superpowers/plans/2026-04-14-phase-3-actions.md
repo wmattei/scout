@@ -1,4 +1,4 @@
-# better-aws-cli — Phase 3: Action Implementations
+# scout — Phase 3: Action Implementations
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,9 +15,9 @@
 - Real error toasts for AWS failures — action errors use the same toast infrastructure but there's no unified error surface yet → **Phase 4**
 - A config file for overriding defaults (download dir, preview formats, etc.) → **post-v0**
 
-**Reference spec:** `docs/superpowers/specs/2026-04-13-better-aws-cli-v0-design.md`
+**Reference spec:** `docs/superpowers/specs/2026-04-13-scout-v0-design.md`
 
-**Working directory:** `/Users/wagnermattei/www/pied-piper/better-aws-cli`. Every command assumes this CWD.
+**Working directory:** `/Users/wmattei/www/pied-piper/scout`. Every command assumes this CWD.
 
 **Testing policy:** No automated tests at v0. Each task ends with `go build ./...` and `git commit`. Manual verification lives in the final smoke-test task.
 
@@ -34,7 +34,7 @@ The user picked Linux-style XDG defaults for download paths with explicit intent
 | Download directory | Reads `XDG_DOWNLOAD_DIR` from `~/.config/user-dirs.dirs`; falls back to `$HOME/Downloads`. On Windows `$HOME` is `%USERPROFILE%` — will land files in `C:\Users\<name>\Downloads`, which is correct but not via the Known Folders API | Config-driven override + Windows Known Folders lookup |
 | `open` / `xdg-open` / `start` | macOS uses `open`, Linux uses `xdg-open`. No Windows branch — `openInBrowser` / `openPreview` return an error on Windows | Add `cmd /c start` for Windows, gate behind runtime.GOOS switch |
 | Clipboard | `atotto/clipboard` works on macOS (`pbcopy`) and most Linux (`xclip`/`xsel`/`wl-copy`); fails with a clear error on headless systems without any clipboard backend | Document prerequisites or vendor an alternative |
-| Temp file cleanup | Preview writes to `$TMPDIR/better-aws/<uuid>.<ext>`. **Not cleaned up by the program**. OS temp dir policies vary (macOS wipes on reboot; Linux `/tmp` varies) | Optional explicit cleanup on exit once Phase 4 adds a panic-safe shutdown hook |
+| Temp file cleanup | Preview writes to `$TMPDIR/scout/<uuid>.<ext>`. **Not cleaned up by the program**. OS temp dir policies vary (macOS wipes on reboot; Linux `/tmp` varies) | Optional explicit cleanup on exit once Phase 4 adds a panic-safe shutdown hook |
 | Preview formats | Whitelist is `.jpg/.jpeg/.png/.txt/.csv`. Anything else shows a toast error | Pluggable format registry, maybe auto-detection by content-type |
 
 ---
@@ -88,7 +88,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // consoleURL builds an AWS web-console deep link for the given resource.
@@ -398,14 +398,14 @@ func previewAllowed(key string) bool {
 }
 
 // previewTempPath returns a unique temp-file path under
-// `$TMPDIR/better-aws/` with the same extension as the object key. The
+// `$TMPDIR/scout/` with the same extension as the object key. The
 // parent directory is created if needed.
 //
 // The file is NOT cleaned up by the program — we rely on the OS temp
 // dir lifecycle (macOS wipes on reboot, /tmp varies on Linux). See the
 // Phase 3 plan for the explicit trade-off.
 func previewTempPath(key string) (string, error) {
-	dir := filepath.Join(os.TempDir(), "better-aws")
+	dir := filepath.Join(os.TempDir(), "scout")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating preview temp dir %s: %w", dir, err)
 	}
@@ -477,7 +477,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // StreamObject streams the object at (bucket, key) into dst. Returns the
@@ -555,7 +555,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // ForceDeployment triggers a rolling deployment on an ECS service by
@@ -609,7 +609,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsecs "github.com/aws/aws-sdk-go-v2/service/ecs"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // TaskDefDetails is the minimal set of task-definition fields the TUI
@@ -703,7 +703,7 @@ import (
 	cwl "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	cwltypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // TailEvent is a single log line surfaced to the TUI. Timestamp is
@@ -828,7 +828,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Action is a single selectable entry in the Details view's Actions list.
@@ -993,7 +993,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execCopyURI copies a resource URI to the clipboard. Only S3 resources
@@ -1073,9 +1073,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awsecs "github.com/wmattei/scout/internal/awsctx/ecs"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execForceDeploy fires an ECS UpdateService(ForceNewDeployment=true) on
@@ -1149,9 +1149,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execDownload streams the selected S3 object into the user's downloads
@@ -1241,9 +1241,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // previewSizeLimit caps how large an object may be before Preview refuses
@@ -1356,7 +1356,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execTailLogs resolves the log group from cached task-def details and
@@ -1682,12 +1682,12 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	awsecs "github.com/wmattei/scout/internal/awsctx/ecs"
+	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 ```
 
@@ -2048,7 +2048,7 @@ func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
 }
 ```
 
-Make sure the `commands.go` import block includes `awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"` (add it if it's not there yet).
+Make sure the `commands.go` import block includes `awslogs "github.com/wmattei/scout/internal/awsctx/logs"` (add it if it's not there yet).
 
 - [ ] **Step 2: Handle the tail messages in `internal/tui/update.go`**
 
@@ -2107,7 +2107,7 @@ func formatTailLine(ev awslogs.TailEvent) string {
 Add the `awslogs` import:
 
 ```go
-awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
+awslogs "github.com/wmattei/scout/internal/awsctx/logs"
 ```
 
 - [ ] **Step 4: Stage only**
@@ -2298,7 +2298,7 @@ Expected files:
 - [ ] **Step 1: Build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean.
@@ -2320,7 +2320,7 @@ No commit — binary is gitignored.
 Run from the project root with AWS credentials configured:
 
 ```bash
-./bin/better-aws
+./bin/scout
 ```
 
 ### S3 bucket actions
@@ -2374,4 +2374,4 @@ Run from the project root with AWS credentials configured:
 
 ## Phase 3 complete — next up
 
-At this point every action in the matrix does the real thing. Phase 4 closes the remaining items from the v0 spec: the `Ctrl+P` profile/region switcher overlay, panic-safe shutdown, a debug log file behind `BETTER_AWS_DEBUG=1`, the `cache clear` subcommand, and a real AWS-error toast surface that replaces the "Phase 4 will surface this" comments scattered throughout the code.
+At this point every action in the matrix does the real thing. Phase 4 closes the remaining items from the v0 spec: the `Ctrl+P` profile/region switcher overlay, panic-safe shutdown, a debug log file behind `SCOUT_DEBUG=1`, the `cache clear` subcommand, and a real AWS-error toast surface that replaces the "Phase 4 will surface this" comments scattered throughout the code.

@@ -1,10 +1,10 @@
-# better-aws-cli — Service Provider Registry Refactor
+# scout — Service Provider Registry Refactor
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Collapse the ~13 `switch t { case core.RTypeX: }` statements scattered across the codebase into a single `services.Provider` interface plus registry, so adding a new AWS resource type becomes "drop a new file under `internal/awsctx/<svc>/` that implements `Provider` and `init()`-registers itself; blank-import its package from `cmd/better-aws/main.go`."
+**Goal:** Collapse the ~13 `switch t { case core.RTypeX: }` statements scattered across the codebase into a single `services.Provider` interface plus registry, so adding a new AWS resource type becomes "drop a new file under `internal/awsctx/<svc>/` that implements `Provider` and `init()`-registers itself; blank-import its package from `cmd/scout/main.go`."
 
-**Architecture:** A new `internal/services` package owns the `Provider` interface and a process-global registry. Each existing per-type concern (tag color, alias list, console URL builder, meta column rendering, Tab drill-in semantics, lazy-detail resolution, log-group lookup, list adapter, etc.) becomes a method on `Provider`. Every existing type gets a small `provider_<name>.go` file inside its existing `internal/awsctx/<svc>/` package; each file's `init()` calls `services.Register`. `cmd/better-aws/main.go` blank-imports the awsctx subpackages so all providers register on startup. After the registry is in place, every type-switch call site is rewritten as a `services.Get(t).Method(...)` call. Lazy task-def resolution gets generalized to a typed `lazyDetailKey{Type, Key}` map so future providers can opt in without touching the message-handler switch. Action dispatch (`tui/actions.go::ActionsFor`) remains a tui-internal switch — moving it would create an import cycle because actions hold closures that mutate the bubbletea Model. That's the one remaining intentional type-switch.
+**Architecture:** A new `internal/services` package owns the `Provider` interface and a process-global registry. Each existing per-type concern (tag color, alias list, console URL builder, meta column rendering, Tab drill-in semantics, lazy-detail resolution, log-group lookup, list adapter, etc.) becomes a method on `Provider`. Every existing type gets a small `provider_<name>.go` file inside its existing `internal/awsctx/<svc>/` package; each file's `init()` calls `services.Register`. `cmd/scout/main.go` blank-imports the awsctx subpackages so all providers register on startup. After the registry is in place, every type-switch call site is rewritten as a `services.Get(t).Method(...)` call. Lazy task-def resolution gets generalized to a typed `lazyDetailKey{Type, Key}` map so future providers can opt in without touching the message-handler switch. Action dispatch (`tui/actions.go::ActionsFor`) remains a tui-internal switch — moving it would create an import cycle because actions hold closures that mutate the bubbletea Model. That's the one remaining intentional type-switch.
 
 **Tech Stack:** Go 1.22+, no new external dependencies. Reuses `aws-sdk-go-v2`, `charmbracelet/lipgloss` (for `Provider.TagStyle()`), and the existing `internal/awsctx`, `internal/core`, and `internal/search` packages.
 
@@ -18,7 +18,7 @@
 
 **Reference review:** the original review that motivated this is in the conversation log; the 13 pain-point inventory there maps 1:1 to the call-site rewrites in Tasks 13–22 below.
 
-**Working directory:** `/Users/wagnermattei/www/pied-piper/better-aws-cli`. Every shell command assumes this CWD.
+**Working directory:** `/Users/wmattei/www/pied-piper/scout`. Every shell command assumes this CWD.
 
 **Testing policy:** No automated tests at v0. Each task ends with `go build ./...` and `git commit`. The refactor is structured so the build passes at every commit — new code is added before old code is deleted, and call sites switch over one at a time.
 
@@ -44,8 +44,8 @@
 
 | Path | What changes |
 |---|---|
-| `cmd/better-aws/main.go` | Blank-import each awsctx subpackage so providers register on startup |
-| `cmd/better-aws/preload.go` | `preloadOne` switch → `services.Get(t).ListAll(...)` |
+| `cmd/scout/main.go` | Blank-import each awsctx subpackage so providers register on startup |
+| `cmd/scout/preload.go` | `preloadOne` switch → `services.Get(t).ListAll(...)` |
 | `internal/core/resource.go` | `Resource.ARN()` delegates to provider; `serviceAliases` map deleted (aliases now live on providers); `ResourceTypeForAlias` and `AliasesFor` delegate to registry |
 | `internal/index/memory.go` | `All()`, `Len()`, and `pri()` use `services.TopLevel()` + `Provider.SortPriority()` instead of the hardcoded type set |
 | `internal/tui/styles.go` | `tagStyleFor` deleted; callers use `services.Get(t).TagStyle()` |
@@ -87,9 +87,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Provider is the per-resource-type strategy interface. Every method
@@ -171,7 +171,7 @@ type Provider interface {
 
 	// ListAll fetches every resource of this type that matches the
 	// optional ListOptions filters. Used by both the manual scope
-	// first-entry refresh and the `better-aws preload` subcommand.
+	// first-entry refresh and the `scout preload` subcommand.
 	// Providers for derived/scoped types (S3 folders, S3 objects)
 	// return (nil, nil) — they have no top-level list semantics.
 	ListAll(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error)
@@ -251,7 +251,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // registry is the process-global Provider lookup table. All access
@@ -397,10 +397,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 func init() { services.Register(&bucketProvider{}) }
@@ -492,10 +492,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 func init() { services.Register(&folderProvider{}) }
@@ -624,10 +624,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 func init() { services.Register(&objectProvider{}) }
@@ -764,10 +764,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 func init() { services.Register(&ecsServiceProvider{}) }
@@ -889,9 +889,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 func init() { services.Register(&ecsTaskDefProvider{}) }
@@ -999,11 +999,11 @@ git commit -m "feat(ecs): add ecsTaskDefProvider with lazy revision + log-group 
 ## Task 8: Blank-import provider packages from `main.go`
 
 **Files:**
-- Modify: `cmd/better-aws/main.go`
+- Modify: `cmd/scout/main.go`
 
 - [ ] **Step 1: Add blank imports to the import block**
 
-Find the `import (...)` block at the top of `cmd/better-aws/main.go` and add three blank import lines so the provider packages' `init()` registers run on startup. The full corrected import block is:
+Find the `import (...)` block at the top of `cmd/scout/main.go` and add three blank import lines so the provider packages' `init()` registers run on startup. The full corrected import block is:
 
 ```go
 import (
@@ -1015,30 +1015,30 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/tui"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/debuglog"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/tui"
 
 	// Provider registrations. Each blank import triggers the
 	// init() in the package, which calls services.Register for
 	// every provider that package owns.
-	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	_ "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
+	_ "github.com/wmattei/scout/internal/awsctx/ecs"
+	_ "github.com/wmattei/scout/internal/awsctx/s3"
 )
 ```
 
 - [ ] **Step 2: Build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean. With the blank imports in place, the registry is populated on every binary launch.
 
 - [ ] **Step 3: Verify the registry is populated**
 
-Add a temporary one-shot to confirm; this is throwaway code we will delete in the next step. Edit `cmd/better-aws/main.go` and add this debug print at the very top of `main()`, right after the `cache clear` dispatch:
+Add a temporary one-shot to confirm; this is throwaway code we will delete in the next step. Edit `cmd/scout/main.go` and add this debug print at the very top of `main()`, right after the `cache clear` dispatch:
 
 ```go
 	// TEMPORARY DEBUG — remove before commit
@@ -1047,13 +1047,13 @@ Add a temporary one-shot to confirm; this is throwaway code we will delete in th
 	}
 ```
 
-You'll also need to import `"github.com/wagnermattei/better-aws-cli/internal/services"` for this throwaway block.
+You'll also need to import `"github.com/wmattei/scout/internal/services"` for this throwaway block.
 
 Run:
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
-./bin/better-aws preload --help 2>&1 | head -20
+go build -o bin/scout ./cmd/scout
+./bin/scout preload --help 2>&1 | head -20
 ```
 
 Expected stderr lines (one per provider, in registration order):
@@ -1073,7 +1073,7 @@ If you don't see all five, something failed to register — investigate before c
 Delete the `TEMPORARY DEBUG` block and the unused `services` import from `main.go`. Re-build:
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean.
@@ -1081,7 +1081,7 @@ Expected: clean.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add cmd/better-aws/main.go
+git add cmd/scout/main.go
 git commit -m "feat(cmd): blank-import awsctx provider packages on startup"
 ```
 
@@ -1161,7 +1161,7 @@ Replace with:
 		}
 ```
 
-Add `"github.com/wagnermattei/better-aws-cli/internal/services"` to the import block of `results.go`.
+Add `"github.com/wmattei/scout/internal/services"` to the import block of `results.go`.
 
 - [ ] **Step 3: Build**
 
@@ -1789,7 +1789,7 @@ func resolveLazyDetailsCmd(ac *awsctx.Context, p services.Provider, r core.Resou
 }
 ```
 
-Add `"github.com/wagnermattei/better-aws-cli/internal/services"` to the import block of `commands.go`. If `awsecs` is now only used by `refreshServiceCmd`, leave it; if it becomes fully unused remove it.
+Add `"github.com/wmattei/scout/internal/services"` to the import block of `commands.go`. If `awsecs` is now only used by `refreshServiceCmd`, leave it; if it becomes fully unused remove it.
 
 - [ ] **Step 4: Update `details.go` to use the generic lazy store**
 
@@ -2073,7 +2073,7 @@ git commit -m "refactor(tui): refreshServiceCmd dispatches via Provider.ListAll"
 ## Task 17: Replace `preloadOne` switch
 
 **Files:**
-- Modify: `cmd/better-aws/preload.go`
+- Modify: `cmd/scout/preload.go`
 
 - [ ] **Step 1: Replace the switch with a registry call**
 
@@ -2130,7 +2130,7 @@ func preloadOne(ctx context.Context, ac *awsctx.Context, db *index.DB, mem *inde
 }
 ```
 
-Add `"github.com/wagnermattei/better-aws-cli/internal/services"` to the import block. Remove the now-unused `awss3` and `awsecs` imports.
+Add `"github.com/wmattei/scout/internal/services"` to the import block. Remove the now-unused `awss3` and `awsecs` imports.
 
 - [ ] **Step 2: Update the alias-to-type loop**
 
@@ -2139,7 +2139,7 @@ Find the `runPreload` block that resolves the user's `target` argument to a list
 - [ ] **Step 3: Build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean.
@@ -2147,7 +2147,7 @@ Expected: clean.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add cmd/better-aws/preload.go
+git add cmd/scout/preload.go
 git commit -m "refactor(cmd): preloadOne dispatches via Provider.ListAll"
 ```
 
@@ -2190,7 +2190,7 @@ func AliasesFor(t ResourceType) []string {
 }
 ```
 
-The alias data now lives on each provider via `Provider.Aliases()`. We can't have `core.ResourceTypeForAlias` import `services` because that creates a cycle (services → core, core → services). The right move is to **delete these helpers from `core` entirely** and update every caller (which is just `cmd/better-aws/preload.go` and `internal/search/scope.go`) to call `services.Lookup(alias)` instead.
+The alias data now lives on each provider via `Provider.Aliases()`. We can't have `core.ResourceTypeForAlias` import `services` because that creates a cycle (services → core, core → services). The right move is to **delete these helpers from `core` entirely** and update every caller (which is just `cmd/scout/preload.go` and `internal/search/scope.go`) to call `services.Lookup(alias)` instead.
 
 Delete the three blocks above from `internal/core/resource.go` outright.
 
@@ -2232,12 +2232,12 @@ Update the import block in `internal/search/scope.go` to add `services` and (if 
 import (
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 ```
 
-- [ ] **Step 3: Update `cmd/better-aws/preload.go` to call `services.Lookup`**
+- [ ] **Step 3: Update `cmd/scout/preload.go` to call `services.Lookup`**
 
 Find this in `runPreload`:
 
@@ -2282,7 +2282,7 @@ Should return zero matches, or matches only inside files you've already updated.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/core/resource.go internal/search/scope.go cmd/better-aws/preload.go
+git add internal/core/resource.go internal/search/scope.go cmd/scout/preload.go
 git commit -m "refactor(core): aliases live on providers; delete core.serviceAliases"
 ```
 
@@ -2302,7 +2302,7 @@ Add this near the top of `internal/index/memory.go`, just below the package-leve
 ```go
 // topLevelTypes is the set of resource types that Memory.All() should
 // return. The TUI layer wires this up at startup via SetTopLevelTypes
-// (see cmd/better-aws/main.go); index can't import the services
+// (see cmd/scout/main.go); index can't import the services
 // registry directly because services depends on internal/awsctx,
 // which depends on... etc — a cycle.
 var topLevelTypes = []core.ResourceType{
@@ -2457,7 +2457,7 @@ func pri(t core.ResourceType) int {
 
 - [ ] **Step 2: Wire `SetTopLevelTypes` from `main.go`**
 
-In `cmd/better-aws/main.go`, find the `runTUI` function and add this block right before opening the cache DB (after `awsctx.Resolve` and `activity.Attach`):
+In `cmd/scout/main.go`, find the `runTUI` function and add this block right before opening the cache DB (after `awsctx.Resolve` and `activity.Attach`):
 
 ```go
 	// Tell the index layer which types are top-level so it can
@@ -2475,11 +2475,11 @@ In `cmd/better-aws/main.go`, find the `runTUI` function and add this block right
 	}
 ```
 
-Add `"github.com/wagnermattei/better-aws-cli/internal/core"` and `"github.com/wagnermattei/better-aws-cli/internal/services"` to the import block of `main.go` (the `services` import is no longer blank — it's actively used here).
+Add `"github.com/wmattei/scout/internal/core"` and `"github.com/wmattei/scout/internal/services"` to the import block of `main.go` (the `services` import is no longer blank — it's actively used here).
 
 - [ ] **Step 3: Do the same in `runPreload`**
 
-The preload subcommand also needs the registry data because it touches `index.Open`/`index.Persist` and the surrounding code might query Memory in the future. Add this in `cmd/better-aws/preload.go`'s `runPreload` right after `awsCtx, err := awsctx.Resolve(ctx)`:
+The preload subcommand also needs the registry data because it touches `index.Open`/`index.Persist` and the surrounding code might query Memory in the future. Add this in `cmd/scout/preload.go`'s `runPreload` right after `awsCtx, err := awsctx.Resolve(ctx)`:
 
 ```go
 	{
@@ -2496,13 +2496,13 @@ The preload subcommand also needs the registry data because it touches `index.Op
 - [ ] **Step 4: Build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean. Verify the build runs:
 
 ```bash
-./bin/better-aws cache clear
+./bin/scout cache clear
 ```
 
 Should print the existing cache-clear message and exit 0 — proving main.go still works.
@@ -2510,7 +2510,7 @@ Should print the existing cache-clear message and exit 0 — proving main.go sti
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/index/memory.go cmd/better-aws/main.go cmd/better-aws/preload.go
+git add internal/index/memory.go cmd/scout/main.go cmd/scout/preload.go
 git commit -m "refactor(index): top-level type set wired from services registry at startup"
 ```
 
@@ -2603,7 +2603,7 @@ git commit -m "refactor(core): delete ResourceType.Tag (replaced by Provider.Tag
 - [ ] **Step 1: Full clean build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 go vet ./...
 ```
 
@@ -2612,8 +2612,8 @@ Both must exit 0.
 - [ ] **Step 2: Sanity-check the binary still runs**
 
 ```bash
-./bin/better-aws cache clear
-./bin/better-aws preload --help 2>&1 || true
+./bin/scout cache clear
+./bin/scout preload --help 2>&1 || true
 ```
 
 The first should print the cache-clear message. The second should exit 1 with the usage banner. Neither should panic.
@@ -2647,8 +2647,8 @@ This is the at-keyboard pass. Run the binary and walk through every code path th
 - [ ] **Step 1: Cold start**
 
 ```bash
-./bin/better-aws cache clear
-./bin/better-aws
+./bin/scout cache clear
+./bin/scout
 ```
 
 - Empty-cache hint should display.
@@ -2681,9 +2681,9 @@ Press Ctrl+P, switch to a different profile, press Enter. Cache state resets, sc
 - [ ] **Step 6: Preload subcommand**
 
 ```bash
-./bin/better-aws preload --limit 5 s3
-./bin/better-aws preload --prefix prod- ecs
-./bin/better-aws preload all
+./bin/scout preload --limit 5 s3
+./bin/scout preload --prefix prod- ecs
+./bin/scout preload all
 ```
 
 Each should succeed and print the per-type item count.
@@ -2709,7 +2709,7 @@ Any bug surfaced in steps 1–6 gets a `fix(refactor): <thing>` commit. Re-run t
 
 After all 22 tasks ship:
 
-- **One file per service.** Adding a hypothetical `RTypeLambdaFunction` becomes: create `internal/awsctx/lambda/provider_functions.go` with `funcProvider` implementing `Provider`, blank-import `internal/awsctx/lambda` from `cmd/better-aws/main.go`. Done. No edits to `tui/styles.go`, `tui/results.go`, `tui/browser.go`, `tui/commands.go`, `cmd/better-aws/preload.go`, `internal/index/memory.go`, `internal/core/resource.go`, etc.
+- **One file per service.** Adding a hypothetical `RTypeLambdaFunction` becomes: create `internal/awsctx/lambda/provider_functions.go` with `funcProvider` implementing `Provider`, blank-import `internal/awsctx/lambda` from `cmd/scout/main.go`. Done. No edits to `tui/styles.go`, `tui/results.go`, `tui/browser.go`, `tui/commands.go`, `cmd/scout/preload.go`, `internal/index/memory.go`, `internal/core/resource.go`, etc.
 - **Lazy details are generic.** Any provider that returns non-nil from `ResolveDetails` participates in the same fire-on-Enter, store-keyed-by-(type,key) flow as ECS task defs do today.
 - **The actions switch in `tui/actions.go` remains.** Adding new actions is still "write `action_xxx.go` + add a line to `ActionsFor`". Adding a new resource type that uses *only* existing actions is a one-line addition to `ActionsFor`. Adding a resource type with new actions is the existing two-step process. Both are documented in the in-file comment.
 - **No new tests** (per project convention). Smoke verification is the single quality gate, executed manually in Task 22.

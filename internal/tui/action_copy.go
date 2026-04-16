@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // execCopyURI copies a resource URI to the clipboard. Only S3 resources

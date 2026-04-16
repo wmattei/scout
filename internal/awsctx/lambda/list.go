@@ -1,4 +1,4 @@
-// Package lambda contains better-aws's thin wrappers around the AWS Lambda SDK.
+// Package lambda contains scout's thin wrappers around the AWS Lambda SDK.
 package lambda
 
 import (
@@ -8,8 +8,8 @@ import (
 
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListFunctions lists Lambda functions in the region. ListFunctions does not

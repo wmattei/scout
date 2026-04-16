@@ -11,9 +11,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Provider is the per-resource-type strategy interface. Every method
@@ -101,7 +101,7 @@ type Provider interface {
 
 	// ListAll fetches every resource of this type that matches the
 	// optional ListOptions filters. Used by both the manual scope
-	// first-entry refresh and the `better-aws preload` subcommand.
+	// first-entry refresh and the `scout preload` subcommand.
 	// Providers for derived/scoped types (S3 folders, S3 objects)
 	// return (nil, nil) — they have no top-level list semantics.
 	ListAll(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error)

@@ -1,4 +1,4 @@
-# better-aws-cli — v0 design
+# scout — v0 design
 
 **Status:** approved for implementation
 **Date:** 2026-04-13
@@ -6,17 +6,17 @@
 
 ## 1. Summary
 
-`better-aws` is an interactive terminal CLI that speeds up AWS resource navigation. Launching it opens a full-screen TUI with a single search bar. Typing fuzzy-matches across cached S3 buckets, ECS services, and ECS task definition families; once you drill into a bucket, the same input doubles as a path breadcrumb and switches to prefix search against S3 keys. Hitting Enter opens a per-resource details view with a short set of actions (Open in Browser, Copy URI/ARN, Force Deploy, Tail Logs, Download, Preview).
+`scout` is an interactive terminal CLI that speeds up AWS resource navigation. Launching it opens a full-screen TUI with a single search bar. Typing fuzzy-matches across cached S3 buckets, ECS services, and ECS task definition families; once you drill into a bucket, the same input doubles as a path breadcrumb and switches to prefix search against S3 keys. Hitting Enter opens a per-resource details view with a short set of actions (Open in Browser, Copy URI/ARN, Force Deploy, Tail Logs, Download, Preview).
 
-It is a sibling project to the existing `better-aws` Chrome extension — same name (the binary is `better-aws`), no shared code.
+It is a sibling project to the existing `scout` Chrome extension — same name (the binary is `scout`), no shared code.
 
 ## 2. Architecture & stack
 
 - **Language:** Go 1.22+
-- **Distribution:** single static binary installed as `better-aws` on `$PATH`. No runtime dependencies for end users.
+- **Distribution:** single static binary installed as `scout` on `$PATH`. No runtime dependencies for end users.
 - **TUI:** `charmbracelet/bubbletea` (Elm-style model/update/view) + `lipgloss` (styles, color, layout) + `bubbles` (textinput, viewport). Custom list renderer for neovim-style per-character highlighting.
 - **AWS SDK:** `aws-sdk-go-v2` via the default credential chain (`config.LoadDefaultConfig` + `WithSharedConfigProfile`). Services used: `s3`, `ecs`, `cloudwatchlogs` (for `StartLiveTail`), `sts` (caller identity only).
-- **Persistence:** `modernc.org/sqlite` (pure-Go, no CGO). One DB file per `(profile, region)` pair at `~/.cache/better-aws/<profile>__<region>.db`.
+- **Persistence:** `modernc.org/sqlite` (pure-Go, no CGO). One DB file per `(profile, region)` pair at `~/.cache/scout/<profile>__<region>.db`.
 - **Fuzzy match:** `sahilm/fuzzy` or equivalent, chosen for its ability to return matched byte positions (drives highlighting).
 - **Clipboard:** `atotto/clipboard`.
 - **Process shape:** single foreground Bubble Tea program. Indexing runs as goroutines spawned from `Init`/`Update`, results flow back via `tea.Msg`. No daemon, no IPC.
@@ -24,8 +24,8 @@ It is a sibling project to the existing `better-aws` Chrome extension — same n
 ### Project layout
 
 ```
-better-aws-cli/
-  cmd/better-aws/           main.go — flag parsing, launch program
+scout/
+  cmd/scout/           main.go — flag parsing, launch program
   internal/tui/             bubbletea model, views, keymaps, styles, details panel
   internal/search/          fuzzy + prefix engines, match-span extraction
   internal/index/           sqlite schema, upsert, load-into-memory
@@ -101,7 +101,7 @@ type Resource struct {
   - ecs task def → `https://console.aws.amazon.com/ecs/v2/task-definitions/<family>/<rev>?region=<r>`
 - **Copy URI / Copy ARN:** writes the string to OS clipboard. URIs use the `s3://bucket/key` shape; ARNs use canonical AWS formats. S3 folders and objects get pseudo-ARNs: `arn:aws:s3:::<bucket>/<key>`.
 - **Download** (objects): streams `GetObject` to `~/Downloads/<basename>`, shows a progress indicator in the status area, returns to the details view when complete.
-- **Preview** (objects): streams `GetObject` to `$TMPDIR/better-aws/<uuid>.<ext>`, hands off to `open`/`xdg-open`, registers the temp file for cleanup on program exit. Hard size cap: 100 MB (rejected inline otherwise). Allowed v0 extensions: `.jpg`, `.jpeg`, `.png`, `.txt`, `.csv` (csv handed to the OS as plain text — no special table rendering inside the TUI).
+- **Preview** (objects): streams `GetObject` to `$TMPDIR/scout/<uuid>.<ext>`, hands off to `open`/`xdg-open`, registers the temp file for cleanup on program exit. Hard size cap: 100 MB (rejected inline otherwise). Allowed v0 extensions: `.jpg`, `.jpeg`, `.png`, `.txt`, `.csv` (csv handed to the OS as plain text — no special table rendering inside the TUI).
 - **Force new Deployment:** `ecs.UpdateService(ForceNewDeployment: true)`. No confirmation prompt. Returns to the details view with a "deployment triggered" toast. Failures surface as an error toast.
 - **Tail Logs:** resolves log group(s) from `containerDefinitions[*].logConfiguration.options["awslogs-group"]` on the current task definition. If multiple container log groups, uses the first and shows a footer note ("tailing group X of Y"); switching between groups is a v1 concern. Calls `cloudwatchlogs.StartLiveTail`, renders into a full-screen viewport. `Esc` or `Ctrl+C` returns to the details view.
   - **Task def variant:** before starting the tail, a one-shot `ListTasks(Family=<family>, DesiredStatus=RUNNING)` decides whether to show a "no running tasks on latest revision — tail will be silent until one starts" notice. The tail itself starts regardless.
@@ -166,7 +166,7 @@ After any non-streaming action completes, focus returns to the details view (not
 
 ### Storage layout
 
-- Directory: `~/.cache/better-aws/`
+- Directory: `~/.cache/scout/`
 - One SQLite file per `(profile, region)` pair: `<profile>__<region>.db`
 - Schema:
 
@@ -229,7 +229,7 @@ CREATE TABLE meta (
 
 **`Ctrl+R` in a scoped view** crawls the entire current bucket with no delimiter and bulk-upserts every key. Progress shown in the status area; cancellable with `Ctrl+C` (partial crawls roll back).
 
-**No TTL, no eviction.** Cache files grow unbounded. `better-aws cache clear` wipes `~/.cache/better-aws/` on demand. Stale-deleted keys linger until `Ctrl+R`.
+**No TTL, no eviction.** Cache files grow unbounded. `scout cache clear` wipes `~/.cache/scout/` on demand. Stale-deleted keys linger until `Ctrl+R`.
 
 ### Concurrency
 
@@ -378,20 +378,20 @@ A single status-line widget in the bottom-right, always visible:
 
 The Bubble Tea program runs under a top-level `recover`:
 
-- Dumps the panic to `~/.cache/better-aws/crash.log`.
+- Dumps the panic to `~/.cache/scout/crash.log`.
 - Restores the terminal state before exiting.
 - No raw stack traces in the user's shell.
 
 ### Logging
 
-- Structured file log at `~/.cache/better-aws/debug.log` using `log/slog` with a JSON handler.
-- Off by default. Enabled via `BETTER_AWS_DEBUG=1`.
+- Structured file log at `~/.cache/scout/debug.log` using `log/slog` with a JSON handler.
+- Off by default. Enabled via `SCOUT_DEBUG=1`.
 - Logs every AWS API call: op name, duration, error, correlation id. **Never request bodies** — credential leak risk too high.
 - Shares the same middleware that drives the activity spinner, so counters and logs stay in sync.
 
 ### Developer aids
 
-- `BETTER_AWS_DEBUG_VIEW=1` — extra status-bar row showing result count, current mode, and last message type.
+- `SCOUT_DEBUG_VIEW=1` — extra status-bar row showing result count, current mode, and last message type.
 - Crash log lives next to cache DBs for easy discovery.
 
 ## 9. Explicit non-goals for v0

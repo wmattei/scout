@@ -1,6 +1,6 @@
 // Package debuglog owns the optional structured log file at
-// $XDG_CACHE_HOME/better-aws/debug.log (or $HOME/.cache/better-aws/debug.log).
-// It is gated on the environment variable BETTER_AWS_DEBUG=1. When the
+// $XDG_CACHE_HOME/scout/debug.log (or $HOME/.cache/scout/debug.log).
+// It is gated on the environment variable SCOUT_DEBUG=1. When the
 // variable is unset or set to any other value, all exported functions
 // return no-op implementations so the rest of the program can call them
 // unconditionally.
@@ -22,7 +22,7 @@ import (
 )
 
 // envVar is the gate that decides whether debug logging is active.
-const envVar = "BETTER_AWS_DEBUG"
+const envVar = "SCOUT_DEBUG"
 
 // enabled caches the result of the env-var check at Init time so later
 // callers don't have to re-consult the environment.
@@ -37,7 +37,7 @@ var (
 // caller should defer from main; the close function is always safe to
 // call, even when logging is disabled.
 //
-// If BETTER_AWS_DEBUG is unset, Init is a no-op and the returned close
+// If SCOUT_DEBUG is unset, Init is a no-op and the returned close
 // function does nothing. Any error opening the log file is reported
 // on stderr (because the TUI hasn't started yet) and the function
 // degrades gracefully to a no-op logger.
@@ -49,19 +49,19 @@ func Init() func() {
 
 	path, err := logPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot resolve debug log path: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: cannot resolve debug log path: %v\n", err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot create debug log dir: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: cannot create debug log dir: %v\n", err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
 
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot open debug log %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "scout: cannot open debug log %s: %v\n", path, err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
@@ -102,13 +102,13 @@ func SDKLogger() logging.Logger { return sdkLogger }
 // logPath resolves the absolute location of the debug log file.
 func logPath() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "better-aws", "debug.log"), nil
+		return filepath.Join(xdg, "scout", "debug.log"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "better-aws", "debug.log"), nil
+	return filepath.Join(home, ".cache", "scout", "debug.log"), nil
 }
 
 // smithyAdapter routes aws-sdk-go-v2 log records (delivered via the

@@ -31,14 +31,14 @@ func previewAllowed(key string) bool {
 }
 
 // previewTempPath returns a unique temp-file path under
-// `$TMPDIR/better-aws/` with the same extension as the object key. The
+// `$TMPDIR/scout/` with the same extension as the object key. The
 // parent directory is created if needed.
 //
 // The file is NOT cleaned up by the program — we rely on the OS temp
 // dir lifecycle (macOS wipes on reboot, /tmp varies on Linux). See the
 // Phase 3 plan for the explicit trade-off.
 func previewTempPath(key string) (string, error) {
-	dir := filepath.Join(os.TempDir(), "better-aws")
+	dir := filepath.Join(os.TempDir(), "scout")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("creating preview temp dir %s: %w", dir, err)
 	}

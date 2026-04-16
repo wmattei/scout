@@ -1,4 +1,4 @@
-module github.com/wagnermattei/better-aws-cli
+module github.com/wmattei/scout
 
 go 1.25.3
 

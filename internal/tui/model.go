@@ -5,11 +5,11 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // lazyDetailKey identifies a single (resource type, resource key)
@@ -143,7 +143,7 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 // Init is called once when the program starts. The TUI no longer fires
 // a top-level refresh at launch — the cache is populated lazily by
 // service-scope first-entry fetches and explicitly by the
-// `better-aws preload <service>` subcommand. Init only kicks off the
+// `scout preload <service>` subcommand. Init only kicks off the
 // spinner ticker and the one-shot caller-identity resolver here.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(

@@ -10,10 +10,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // Custom messages emitted by commands.

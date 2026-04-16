@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// ResourceType enumerates the kinds of AWS resources better-aws knows about.
+// ResourceType enumerates the kinds of AWS resources scout knows about.
 // Phase 1 only uses RTypeBucket, RTypeEcsService, and RTypeEcsTaskDefFamily.
 // RTypeFolder and RTypeObject exist for later phases and are declared here so
 // the TUI and index layers can pattern-match on the complete set.

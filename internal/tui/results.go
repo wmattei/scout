@@ -6,9 +6,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // renderResults returns a string containing every visible row, one per line.

@@ -6,13 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
-	"github.com/wagnermattei/better-aws-cli/internal/services"
+	"github.com/wmattei/scout/internal/awsctx"
+	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // refreshServiceCmd fires a live fetch for a single resource type,
@@ -21,7 +21,7 @@ import (
 // "<alias>:", the TUI fires this to populate the in-memory index with
 // fresh data for just that type. The full top-level refresh used to
 // run on launch but was retired in favour of the explicit
-// `better-aws preload <service>` subcommand — every refresh now
+// `scout preload <service>` subcommand — every refresh now
 // either user-typed (a service scope) or user-invoked (the
 // subcommand).
 func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t core.ResourceType) tea.Cmd {

@@ -1,8 +1,8 @@
-# better-aws-cli — Phase 4: Polish, Switcher, and Error Surface
+# scout — Phase 4: Polish, Switcher, and Error Surface
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close out the v0 spec. Ship a `Ctrl+P` profile/region switcher overlay that hot-swaps the AWS context, add a panic-safe shutdown path that preserves a `crash.log`, add a `BETTER_AWS_DEBUG=1` debug log that captures SDK + app events to `~/.cache/better-aws/debug.log`, add a `better-aws cache clear` subcommand, and wire every `// Phase 4 will surface this` TODO to an actual error toast with a red visual variant.
+**Goal:** Close out the v0 spec. Ship a `Ctrl+P` profile/region switcher overlay that hot-swaps the AWS context, add a panic-safe shutdown path that preserves a `crash.log`, add a `SCOUT_DEBUG=1` debug log that captures SDK + app events to `~/.cache/scout/debug.log`, add a `scout cache clear` subcommand, and wire every `// Phase 4 will surface this` TODO to an actual error toast with a red visual variant.
 
 **Architecture:** The switcher is a new `modeSwitcher` that drops over the main frame while the user picks a profile + region; committing closes the old SQLite handle, opens a new DB scoped to `(profile, region)`, rebuilds the in-memory index, and fires a fresh top-level refresh. An in-flight refresh from the old context is not actively cancelled — if it's still running when the swap completes, its writes to the now-closed db fail silently and its final `msgResourcesUpdated` lands on the new in-memory index (where it's a harmless no-op because the new memory is what's already shown). This is acceptable for v0 and can be made clean with a session counter later. The debug log is an `internal/debuglog` package that initializes an `slog.Logger` + an adapter implementing smithy's `logging.Logger` interface; `awsctx.Resolve` picks between `logging.Nop{}` and the adapter based on the env var. Panic recovery is a single deferred `recover()` in `main.run()` that dumps the stack + routine state to the crash file and returns a normal error so the existing stderr handler prints and exits cleanly. The error toast surface is a `Level` field on the existing `Toast` type plus a red style variant; every site that previously emitted `toast: <plain text>` with an error context now uses `newErrorToast(<text>)`, and two message types (`msgResourcesUpdated`, `msgScopedResults`) grow `err` fields so the commands that drop errors today can route them to the Update handler.
 
@@ -16,9 +16,9 @@
 - `cache list` / `cache size` subcommands (only `cache clear` for v0)
 - STS AssumeRole or SSO-specific UX (non-goal; standard SDK chain only)
 
-**Reference spec:** `docs/superpowers/specs/2026-04-13-better-aws-cli-v0-design.md`
+**Reference spec:** `docs/superpowers/specs/2026-04-13-scout-v0-design.md`
 
-**Working directory:** `/Users/wagnermattei/www/pied-piper/better-aws-cli`. Every command assumes this CWD.
+**Working directory:** `/Users/wmattei/www/pied-piper/scout`. Every command assumes this CWD.
 
 **Testing policy:** No automated tests at v0. Each task ends with `go build ./...` and `git commit`. Manual verification is in the final smoke-test task.
 
@@ -41,7 +41,7 @@
 
 | Path | What changes |
 |---|---|
-| `cmd/better-aws/main.go` | Subcommand routing (`cache clear`), panic recovery wrapper, debuglog init + teardown |
+| `cmd/scout/main.go` | Subcommand routing (`cache clear`), panic recovery wrapper, debuglog init + teardown |
 | `internal/awsctx/config.go` | Route `cfg.Logger` to debuglog adapter when enabled |
 | `internal/tui/model.go` | `switcher Switcher` state, `refreshCancel func()` for context cancellation |
 | `internal/tui/mode.go` | `modeSwitcher` constant |
@@ -64,8 +64,8 @@ Create `internal/debuglog/debuglog.go` with EXACTLY this content:
 
 ```go
 // Package debuglog owns the optional structured log file at
-// $XDG_CACHE_HOME/better-aws/debug.log (or $HOME/.cache/better-aws/debug.log).
-// It is gated on the environment variable BETTER_AWS_DEBUG=1. When the
+// $XDG_CACHE_HOME/scout/debug.log (or $HOME/.cache/scout/debug.log).
+// It is gated on the environment variable SCOUT_DEBUG=1. When the
 // variable is unset or set to any other value, all exported functions
 // return no-op implementations so the rest of the program can call them
 // unconditionally.
@@ -87,7 +87,7 @@ import (
 )
 
 // envVar is the gate that decides whether debug logging is active.
-const envVar = "BETTER_AWS_DEBUG"
+const envVar = "SCOUT_DEBUG"
 
 // enabled caches the result of the env-var check at Init time so later
 // callers don't have to re-consult the environment.
@@ -102,7 +102,7 @@ var (
 // caller should defer from main; the close function is always safe to
 // call, even when logging is disabled.
 //
-// If BETTER_AWS_DEBUG is unset, Init is a no-op and the returned close
+// If SCOUT_DEBUG is unset, Init is a no-op and the returned close
 // function does nothing. Any error opening the log file is reported
 // on stderr (because the TUI hasn't started yet) and the function
 // degrades gracefully to a no-op logger.
@@ -114,19 +114,19 @@ func Init() func() {
 
 	path, err := logPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot resolve debug log path: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: cannot resolve debug log path: %v\n", err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot create debug log dir: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: cannot create debug log dir: %v\n", err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
 
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: cannot open debug log %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "scout: cannot open debug log %s: %v\n", path, err)
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 		return func() {}
 	}
@@ -167,13 +167,13 @@ func SDKLogger() logging.Logger { return sdkLogger }
 // logPath resolves the absolute location of the debug log file.
 func logPath() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "better-aws", "debug.log"), nil
+		return filepath.Join(xdg, "scout", "debug.log"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "better-aws", "debug.log"), nil
+	return filepath.Join(home, ".cache", "scout", "debug.log"), nil
 }
 
 // smithyAdapter routes aws-sdk-go-v2 log records (delivered via the
@@ -235,7 +235,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
+	"github.com/wmattei/scout/internal/debuglog"
 )
 ```
 
@@ -248,18 +248,18 @@ Find:
 	// bleed onto the alt-screen and shift the TUI frame. A common
 	// offender is the S3 GetObject "response has no supported checksum"
 	// warning that fires on pre-checksum uploads. Phase 4 will swap
-	// Nop{} for a file-backed logger gated on BETTER_AWS_DEBUG=1.
+	// Nop{} for a file-backed logger gated on SCOUT_DEBUG=1.
 	cfg.Logger = logging.Nop{}
 ```
 
 Replace with:
 
 ```go
-	// Route the SDK logger through debuglog. When BETTER_AWS_DEBUG is
+	// Route the SDK logger through debuglog. When SCOUT_DEBUG is
 	// unset the adapter is smithy's Nop{}, so no output hits the
 	// terminal and the alt-screen frame stays stable. With the env
 	// var set, SDK records flow into
-	// $XDG_CACHE_HOME/better-aws/debug.log alongside app-level
+	// $XDG_CACHE_HOME/scout/debug.log alongside app-level
 	// events.
 	cfg.Logger = debuglog.SDKLogger()
 ```
@@ -284,24 +284,24 @@ git commit -m "feat(awsctx): route cfg.Logger through debuglog (nop when unset)"
 ## Task 3: Panic recovery wrapper + debuglog init in main.go
 
 **Files:**
-- Modify: `cmd/better-aws/main.go`
+- Modify: `cmd/scout/main.go`
 
-- [ ] **Step 1: Overwrite `cmd/better-aws/main.go`**
+- [ ] **Step 1: Overwrite `cmd/scout/main.go`**
 
 Replace the entire file with:
 
 ```go
-// Command better-aws is an interactive TUI for navigating AWS resources.
+// Command scout is an interactive TUI for navigating AWS resources.
 //
 // Argv forms:
 //
-//	better-aws                 — launch the TUI
-//	better-aws cache clear     — wipe the on-disk cache and exit
+//	scout                 — launch the TUI
+//	scout cache clear     — wipe the on-disk cache and exit
 //
 // Environment flags:
 //
-//	BETTER_AWS_DEBUG=1  — enable the file-backed debug log at
-//	                      $XDG_CACHE_HOME/better-aws/debug.log
+//	SCOUT_DEBUG=1  — enable the file-backed debug log at
+//	                      $XDG_CACHE_HOME/scout/debug.log
 package main
 
 import (
@@ -313,10 +313,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/tui"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/debuglog"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/tui"
 )
 
 const Version = "0.0.0-phase4"
@@ -326,7 +326,7 @@ func main() {
 	// TUI so legacy invocations don't break.
 	if len(os.Args) >= 3 && os.Args[1] == "cache" && os.Args[2] == "clear" {
 		if err := runCacheClear(); err != nil {
-			fmt.Fprintf(os.Stderr, "better-aws: %v\n", err)
+			fmt.Fprintf(os.Stderr, "scout: %v\n", err)
 			os.Exit(1)
 		}
 		return
@@ -336,7 +336,7 @@ func main() {
 	defer closeLog()
 
 	if err := runTUI(); err != nil {
-		fmt.Fprintf(os.Stderr, "better-aws: %v\n", err)
+		fmt.Fprintf(os.Stderr, "scout: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -353,7 +353,7 @@ func runTUI() (err error) {
 			stack := debug.Stack()
 			crashErr := writeCrashLog(r, stack)
 			if crashErr != nil {
-				fmt.Fprintf(os.Stderr, "better-aws: additionally failed to write crash log: %v\n", crashErr)
+				fmt.Fprintf(os.Stderr, "scout: additionally failed to write crash log: %v\n", crashErr)
 			}
 			err = fmt.Errorf("panic recovered: %v (crash log written to %s)", r, crashLogPath())
 		}
@@ -404,13 +404,13 @@ func runCacheClear() error {
 		return err
 	}
 	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
-		fmt.Println("better-aws: cache already clear")
+		fmt.Println("scout: cache already clear")
 		return nil
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("removing %s: %w", dir, err)
 	}
-	fmt.Printf("better-aws: cleared cache at %s\n", dir)
+	fmt.Printf("scout: cleared cache at %s\n", dir)
 	return nil
 }
 
@@ -418,13 +418,13 @@ func runCacheClear() error {
 // here so the cache-clear subcommand works without opening a DB first.
 func cacheDir() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "better-aws"), nil
+		return filepath.Join(xdg, "scout"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "better-aws"), nil
+	return filepath.Join(home, ".cache", "scout"), nil
 }
 
 // crashLogPath returns the absolute path to the crash log.
@@ -450,7 +450,7 @@ func writeCrashLog(panicVal interface{}, stack []byte) error {
 		return err
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "better-aws %s crash log\n", Version)
+	fmt.Fprintf(f, "scout %s crash log\n", Version)
 	fmt.Fprintf(f, "panic: %v\n\n", panicVal)
 	fmt.Fprintf(f, "stack:\n%s\n", stack)
 	return nil
@@ -460,7 +460,7 @@ func writeCrashLog(panicVal interface{}, stack []byte) error {
 - [ ] **Step 2: Build**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean.
@@ -468,17 +468,17 @@ Expected: clean.
 - [ ] **Step 3: Verify cache clear works**
 
 ```bash
-./bin/better-aws cache clear
+./bin/scout cache clear
 ```
 
-Expected output: either `better-aws: cache already clear` or `better-aws: cleared cache at <path>`. Exit 0. No TUI.
+Expected output: either `scout: cache already clear` or `scout: cleared cache at <path>`. Exit 0. No TUI.
 
 If you already have a cache (likely from Phase 3 smoke tests), this will wipe it — that's fine, it'll be repopulated next launch.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add cmd/better-aws/main.go
+git add cmd/scout/main.go
 git commit -m "feat(cmd): add cache-clear subcommand, panic recovery, and debuglog init"
 ```
 
@@ -997,7 +997,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 
-	"github.com/wagnermattei/better-aws-cli/internal/debuglog"
+	"github.com/wmattei/scout/internal/debuglog"
 )
 
 // ResolveForProfile is the same as Resolve but takes explicit profile
@@ -1066,7 +1066,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx"
 )
 
 // switcherPane identifies which pane currently has keyboard focus
@@ -1709,10 +1709,10 @@ git show HEAD --stat
 
 **Files:** none.
 
-- [ ] **Step 1: Produce `bin/better-aws`**
+- [ ] **Step 1: Produce `bin/scout`**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: clean.
@@ -1733,24 +1733,24 @@ No commit — verification only.
 
 ### Cache-clear subcommand
 
-- [ ] `./bin/better-aws cache clear` — prints either `cache already clear` or `cleared cache at <path>`, exits 0 without opening the TUI.
-- [ ] Confirm the cache dir is gone: `ls ~/.cache/better-aws/ 2>&1` should show "No such file or directory".
+- [ ] `./bin/scout cache clear` — prints either `cache already clear` or `cleared cache at <path>`, exits 0 without opening the TUI.
+- [ ] Confirm the cache dir is gone: `ls ~/.cache/scout/ 2>&1` should show "No such file or directory".
 
 ### Debug log
 
-- [ ] `BETTER_AWS_DEBUG=1 ./bin/better-aws` — launch and quit with Ctrl+C.
-- [ ] `ls ~/.cache/better-aws/debug.log` — the file exists.
-- [ ] `cat ~/.cache/better-aws/debug.log | head` — each line is JSON with a `"msg":"starting tui"` or similar record.
-- [ ] Relaunch `BETTER_AWS_DEBUG=1 ./bin/better-aws` and quit. Verify the log was **truncated** — no records from the previous run should remain.
+- [ ] `SCOUT_DEBUG=1 ./bin/scout` — launch and quit with Ctrl+C.
+- [ ] `ls ~/.cache/scout/debug.log` — the file exists.
+- [ ] `cat ~/.cache/scout/debug.log | head` — each line is JSON with a `"msg":"starting tui"` or similar record.
+- [ ] Relaunch `SCOUT_DEBUG=1 ./bin/scout` and quit. Verify the log was **truncated** — no records from the previous run should remain.
 - [ ] Relaunch WITHOUT the env var. Verify the debug.log file is not touched / re-created / truncated.
 
 ### Panic recovery
 
-- [ ] This one is hard to trigger without a fake panic site. If you want to verify it, temporarily insert a `panic("smoke test")` into `cmd/better-aws/main.go`'s `runTUI()` just before `program.Run()`. Launch the binary. Expected: the program exits 1, stderr reads `better-aws: panic recovered: smoke test (crash log written to ~/.cache/better-aws/crash.log)`, and the terminal is still usable. `cat ~/.cache/better-aws/crash.log` shows the stack trace. Remove the panic, rebuild, recommit if needed.
+- [ ] This one is hard to trigger without a fake panic site. If you want to verify it, temporarily insert a `panic("smoke test")` into `cmd/scout/main.go`'s `runTUI()` just before `program.Run()`. Launch the binary. Expected: the program exits 1, stderr reads `scout: panic recovered: smoke test (crash log written to ~/.cache/scout/crash.log)`, and the terminal is still usable. `cat ~/.cache/scout/crash.log` shows the stack trace. Remove the panic, rebuild, recommit if needed.
 
 ### Error toast surface
 
-- [ ] Simulate a failure: launch with a bogus region via `AWS_REGION=xx-west-99 ./bin/better-aws`. Type a character. Verify a red toast appears at the bottom with the refresh error from the SDK (something like `refresh failed: operation error S3: ListBuckets, ...`).
+- [ ] Simulate a failure: launch with a bogus region via `AWS_REGION=xx-west-99 ./bin/scout`. Type a character. Verify a red toast appears at the bottom with the refresh error from the SDK (something like `refresh failed: operation error S3: ListBuckets, ...`).
 - [ ] Select an ECS service → press `2` (Force new Deployment) on a service you don't have `ecs:UpdateService` permission for. Verify a red toast reads `force deploy failed: operation error ECS: UpdateService, ...`.
 
 ### Profile / region switcher

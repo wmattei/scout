@@ -4,12 +4,12 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // topLevelTypes is the set of resource types that Memory.All() should
 // return. The TUI layer wires this up at startup via SetTopLevelTypes
-// (see cmd/better-aws/main.go); index can't import the services
+// (see cmd/scout/main.go); index can't import the services
 // registry directly because services depends on internal/awsctx,
 // which depends on... etc — a cycle.
 var topLevelTypes = []core.ResourceType{

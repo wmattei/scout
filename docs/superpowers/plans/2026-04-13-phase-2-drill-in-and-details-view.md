@@ -1,4 +1,4 @@
-# better-aws-cli — Phase 2: Drill-In & Details View
+# scout — Phase 2: Drill-In & Details View
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,9 +16,9 @@
 - Multi-container log group picker, revision pinning → **Phase 3**
 - Bulk-crawl (`Ctrl+R` inside a scoped view) → out-of-scope for Phase 2; can be added anytime once the DB helpers exist
 
-**Reference spec:** `docs/superpowers/specs/2026-04-13-better-aws-cli-v0-design.md`
+**Reference spec:** `docs/superpowers/specs/2026-04-13-scout-v0-design.md`
 
-**Working directory:** `/Users/wagnermattei/www/pied-piper/better-aws-cli`. Every shell command assumes this CWD.
+**Working directory:** `/Users/wmattei/www/pied-piper/scout`. Every shell command assumes this CWD.
 
 **Testing policy:** No automated tests in v0. Every task ends with `go build ./...` followed by `git commit`.
 
@@ -163,7 +163,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Prefix runs a case-sensitive prefix match of `query` against each
@@ -268,8 +268,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListAtPrefix lists folders (virtual, via CommonPrefixes) and objects
@@ -406,7 +406,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // UpsertBucketContents writes every resource in `rs` to the bucket_contents
@@ -652,7 +652,7 @@ Create `internal/tui/actions.go` with EXACTLY this content:
 ```go
 package tui
 
-import "github.com/wagnermattei/better-aws-cli/internal/core"
+import "github.com/wmattei/scout/internal/core"
 
 // Action is a single selectable entry in the Details view's Actions list.
 // Phase 2 only uses Label — execution is stubbed and uniformly produces a
@@ -834,10 +834,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Model is the bubbletea model for the search + details views. Phase 2
@@ -942,9 +942,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 
 // Custom messages emitted by commands.
@@ -1315,12 +1315,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	awsecs "github.com/wmattei/scout/internal/awsctx/ecs"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
 )
 ```
 
@@ -1362,7 +1362,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // renderDetails produces the full Details screen for the current
@@ -1677,8 +1677,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
 )
 ```
 
@@ -1741,10 +1741,10 @@ git commit -m "feat(tui): clear expired toasts on spin tick"
 
 **Files:** none.
 
-- [ ] **Step 1: Produce `bin/better-aws`**
+- [ ] **Step 1: Produce `bin/scout`**
 
 ```bash
-go build -o bin/better-aws ./cmd/better-aws
+go build -o bin/scout ./cmd/scout
 ```
 
 Expected: binary exists, no stdout, exit 0.
@@ -1768,8 +1768,8 @@ No commit — this task is purely a build checkpoint.
 - [ ] **Step 1: Cold start + top-level search (sanity)**
 
 ```bash
-rm -rf ~/.cache/better-aws
-./bin/better-aws
+rm -rf ~/.cache/scout
+./bin/scout
 ```
 
 Verify:
