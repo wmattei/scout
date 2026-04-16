@@ -80,16 +80,15 @@ func execSSMUpdateValue(m Model) (Model, tea.Cmd) {
 }
 
 // ssmUpdateCmd reads the new value from content and calls ssm:PutParameter.
-// The parameter type is taken from the lazy map so SecureString parameters
-// remain encrypted after the update.
+// The parameter type is taken from the resource Meta so SecureString params
+// remain encrypted after the update. On success, refetchDetails=true tells
+// the handler to invalidate the lazyDetails cache so the Details panel
+// refreshes and shows the new value.
 func ssmUpdateCmd(ac *awsctx.Context, r core.Resource, content []byte) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Resolve the parameter type from the resource Meta. The lazy map
-		// is not available inside the Cmd goroutine, so we fall back to
-		// the Meta field captured at listing time — it carries the type.
 		paramType := r.Meta["type"]
 		if paramType == "" {
 			paramType = "String"
@@ -102,6 +101,6 @@ func ssmUpdateCmd(ac *awsctx.Context, r core.Resource, content []byte) tea.Cmd {
 				err:   err,
 			}
 		}
-		return msgActionDone{toast: "parameter updated", err: nil}
+		return msgActionDone{toast: "parameter updated", refetchDetails: true}
 	}
 }

@@ -15,9 +15,16 @@ import (
 
 // ListParameters lists SSM Parameter Store parameters using DescribeParameters.
 // If opts.Prefix is set, a ParameterFilters Name+BeginsWith filter is applied
-// server-side. If opts.Limit is set, results are capped (max 50 per page).
+// server-side. If opts.Limit is set, results are capped. When no limit is
+// specified the adapter caps at 200 internally so the TUI's service-scope
+// first-entry path doesn't paginate through thousands of parameters.
 func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
 	client := awsssm.NewFromConfig(ac.Cfg)
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200 // sane default for interactive use
+	}
 
 	var resources []core.Resource
 	var nextToken *string
@@ -28,17 +35,15 @@ func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpt
 		}
 
 		// Cap page size at 50 (API hard limit).
-		if opts.Limit > 0 {
-			remaining := opts.Limit - len(resources)
-			if remaining <= 0 {
-				break
-			}
-			maxResults := int32(remaining)
-			if maxResults > 50 {
-				maxResults = 50
-			}
-			input.MaxResults = &maxResults
+		remaining := limit - len(resources)
+		if remaining <= 0 {
+			break
 		}
+		maxResults := int32(remaining)
+		if maxResults > 50 {
+			maxResults = 50
+		}
+		input.MaxResults = &maxResults
 
 		// Server-side prefix filter via ParameterFilters.
 		if opts.Prefix != "" {
@@ -79,7 +84,7 @@ func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpt
 				Meta:        meta,
 			})
 
-			if opts.Limit > 0 && len(resources) >= opts.Limit {
+			if len(resources) >= limit {
 				break
 			}
 		}

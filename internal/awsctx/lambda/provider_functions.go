@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,17 +144,20 @@ func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string
 		}
 	}
 
-	// Tags — first 5.
+	// Tags — first 5, sorted by key for stable rendering across polls.
 	if tags := decodeStringMap(lazy["tags"]); len(tags) > 0 {
+		keys := make([]string, 0, len(tags))
+		for k := range tags {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
 		rows = append(rows, services.DetailRow{})
 		rows = append(rows, services.DetailRow{Value: styleHeader.Render("Tags")})
-		count := 0
-		for k, v := range tags {
-			if count >= 5 {
+		for i, k := range keys {
+			if i >= 5 {
 				break
 			}
-			rows = append(rows, services.DetailRow{Value: styleDim.Render(k + "=" + v)})
-			count++
+			rows = append(rows, services.DetailRow{Value: styleDim.Render(k + "=" + tags[k])})
 		}
 	}
 

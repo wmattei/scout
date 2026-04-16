@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -19,16 +20,26 @@ const (
 
 // msgEditorClosed is emitted after the user saves and exits $EDITOR.
 // The handler reads the temp file at pendingEditorPath, dispatches the
-// follow-up based on m.pendingEditorAction, then cleans up.
+// follow-up based on m.pendingEditorAction, then cleans up. It carries
+// the file mtime recorded BEFORE the editor opened so the handler can
+// detect "user quit without saving" by comparing against the current
+// mtime — if they match, no save happened.
 type msgEditorClosed struct {
-	Err error
+	Err       error
+	MtimePre  time.Time // mtime of temp file before editor opened
 }
 
-// openEditorCmd suspends the TUI, opens the file at `path` in the
-// user's $EDITOR (falling back to vi on Unix, notepad on Windows),
-// waits for the editor to exit, then emits msgEditorClosed so the
-// handler can read the result.
+// openEditorCmd records the temp file's mtime, suspends the TUI,
+// opens the file in $EDITOR, waits for the editor to exit, and emits
+// msgEditorClosed with the pre-open mtime so the handler can detect
+// whether the user actually saved.
 func openEditorCmd(path string) tea.Cmd {
+	// Capture mtime before the editor touches the file.
+	var mtimePre time.Time
+	if info, err := os.Stat(path); err == nil {
+		mtimePre = info.ModTime()
+	}
+
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		switch runtime.GOOS {
@@ -40,6 +51,6 @@ func openEditorCmd(path string) tea.Cmd {
 	}
 	c := exec.Command(editor, path)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return msgEditorClosed{Err: err}
+		return msgEditorClosed{Err: err, MtimePre: mtimePre}
 	})
 }

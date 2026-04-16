@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -109,6 +110,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.toast = newToast(msg.toast, 4*time.Second)
 		}
+		// If the action requests a details refetch (e.g. SSM Update
+		// Value just wrote a new value), invalidate the lazy cache
+		// and re-fire ResolveDetails so the panel shows fresh data.
+		if msg.refetchDetails && m.mode == modeDetails {
+			key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+			delete(m.lazyDetails, key)
+			m.lazyDetailsState[key] = lazyStateInFlight
+			if p, ok := services.Get(m.detailsResource.Type); ok {
+				return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
+			}
+		}
 		return m, nil
 
 	case msgEditorClosed:
@@ -116,6 +128,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast = newErrorToast("editor: " + msg.Err.Error())
 			m.pendingEditorAction = editorActionNone
 			return m, nil
+		}
+		// Check whether the user actually saved. If the file's mtime
+		// is unchanged the user quit without saving (`:q!` in vim),
+		// and we should skip the follow-up action entirely.
+		if info, err := os.Stat(m.pendingEditorPath); err == nil {
+			if !info.ModTime().After(msg.MtimePre) {
+				_ = os.Remove(m.pendingEditorPath)
+				m.toast = newToast("editor closed without saving — cancelled", 3*time.Second)
+				m.pendingEditorAction = editorActionNone
+				return m, nil
+			}
 		}
 		content, err := os.ReadFile(m.pendingEditorPath)
 		_ = os.Remove(m.pendingEditorPath) // clean up regardless
@@ -126,6 +149,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch m.pendingEditorAction {
 		case editorActionLambdaInvoke:
+			// Validate JSON before invoking.
+			if !json.Valid(content) {
+				m.toast = newErrorToast("invalid JSON payload — invoke cancelled")
+				m.pendingEditorAction = editorActionNone
+				return m, nil
+			}
 			m.inFlight = true
 			m.inFlightLabel = "invoking…"
 			m.pendingEditorAction = editorActionNone
