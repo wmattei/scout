@@ -75,6 +75,14 @@ type Model struct {
 	tailStream   *awslogs.TailStream // cancellable stream handle
 	tailViewport viewport.Model      // scrolling log viewport
 
+	// Tail filter — when non-empty, only lines containing this
+	// substring are shown in the viewport. The backend continues
+	// collecting every line into tailLines so clearing the filter
+	// restores the full scrollback. tailFilterEditing is true while
+	// the user is typing into the filter prompt (/ key).
+	tailFilter        string
+	tailFilterEditing bool
+
 	// Unused in Phase 2; reserved for Phase 4's refresh progress tracking.
 	lastTopLevel []core.Resource
 
