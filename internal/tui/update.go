@@ -19,8 +19,9 @@ type (
 	msgResourcesUpdated struct {
 		errors []string // one string per failed subtask, empty on full success
 	}
-	msgAccount  struct{ account string }
-	msgSpinTick struct{}
+	msgAccount      struct{ account string }
+	msgSpinTick     struct{}
+	msgPollDetails  struct{ key lazyDetailKey }
 
 	// msgScopedResults carries the merged cache+live result set for a
 	// scoped (bucket/prefix) search. `query` is the exact input value
@@ -113,13 +114,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.lazyDetailsState[msg.key] = lazyStateResolved
 			m.toast = newErrorToast("resolve details failed: " + msg.err.Error())
-			return m, nil
+			// Still schedule the next poll so the user sees fresh data
+			// once a transient failure clears.
+			return m, schedulePollIfNeeded(m, msg.key)
 		}
 		if m.lazyDetails == nil {
 			m.lazyDetails = make(map[lazyDetailKey]map[string]string)
 		}
 		m.lazyDetails[msg.key] = msg.details
 		m.lazyDetailsState[msg.key] = lazyStateResolved
+		return m, schedulePollIfNeeded(m, msg.key)
+
+	case msgPollDetails:
+		// A scheduled poll tick fired. Re-fire ResolveDetails only if
+		// the user is still looking at the same resource in the same
+		// mode. Don't set lazyStateInFlight — the current data stays
+		// visible until the fresh result silently overwrites it.
+		if m.mode != modeDetails {
+			return m, nil
+		}
+		if msg.key.Type != m.detailsResource.Type || msg.key.Key != m.detailsResource.Key {
+			return m, nil
+		}
+		if p, ok := services.Get(m.detailsResource.Type); ok {
+			return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
+		}
 		return m, nil
 
 	case msgTailStarted:
@@ -443,6 +462,31 @@ func deleteLastPathSegment(input string) string {
 		return s[:i+1]
 	}
 	return ""
+}
+
+// schedulePollIfNeeded returns a tea.Tick that will fire
+// msgPollDetails after the provider's PollingInterval if the user is
+// still in modeDetails looking at the resource that just resolved.
+// Returns nil when polling is disabled, the user has left Details,
+// or the resolved resource doesn't match the currently-displayed one.
+func schedulePollIfNeeded(m Model, key lazyDetailKey) tea.Cmd {
+	if m.mode != modeDetails {
+		return nil
+	}
+	if key.Type != m.detailsResource.Type || key.Key != m.detailsResource.Key {
+		return nil
+	}
+	p, ok := services.Get(key.Type)
+	if !ok {
+		return nil
+	}
+	interval := p.PollingInterval()
+	if interval <= 0 {
+		return nil
+	}
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return msgPollDetails{key: key}
+	})
 }
 
 // readScopedCache does a synchronous SQLite read of bucket_contents for

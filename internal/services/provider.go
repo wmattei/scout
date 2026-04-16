@@ -7,6 +7,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -123,6 +124,18 @@ type Provider interface {
 	// informational toast).
 	LogGroup(r core.Resource, lazy map[string]string) string
 
+	// PollingInterval returns how often the Details view should
+	// re-fire ResolveDetails while the user is looking at it.
+	// Return 0 or a negative value to disable polling entirely
+	// (the default via BaseProvider). A positive duration means the
+	// handler schedules a background refresh every N seconds so
+	// live-state fields (running task count, deployment rollout,
+	// recent events) stay current without the user re-entering
+	// Details. The in-flight poll does NOT flash the "resolving…"
+	// placeholder — the current data stays visible until the fresh
+	// result lands and overwrites it.
+	PollingInterval() time.Duration
+
 	// AlwaysRefresh reports whether the Details Enter handler should
 	// fire ResolveDetails on every entry (ignoring any existing
 	// resolved state), or stick with the default "resolve once per
@@ -174,6 +187,8 @@ func (BaseProvider) ResolveDetails(context.Context, *awsctx.Context, core.Resour
 }
 
 func (BaseProvider) LogGroup(core.Resource, map[string]string) string { return "" }
+
+func (BaseProvider) PollingInterval() time.Duration { return 0 }
 
 func (BaseProvider) AlwaysRefresh() bool { return false }
 
