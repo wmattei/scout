@@ -12,6 +12,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
@@ -186,7 +187,7 @@ func (ecsTaskDefProvider) DetailRows(r core.Resource, lazy map[string]string) []
 	}
 
 	// Containers + images as a sub-section.
-	if containers := decodeContainers(lazy["containers"]); len(containers) > 0 {
+	if containers := format.DecodeJSONSlice(lazy["containers"]); len(containers) > 0 {
 		rows = append(rows, services.DetailRow{}) // spacer
 		if len(containers) <= 3 {
 			rows = append(rows, services.DetailRow{Value: styleHeader.Render("Containers")})
@@ -217,18 +218,6 @@ func shortRole(arn string) string {
 		return arn[i+1:]
 	}
 	return arn
-}
-
-// decodeContainers unmarshals a JSON []string of "name=image" entries.
-func decodeContainers(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	return out
 }
 
 // styleHeader and styleDim are declared in provider_services.go

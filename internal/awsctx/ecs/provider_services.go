@@ -12,6 +12,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
@@ -192,7 +193,7 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 	}
 
 	// Load balancer target groups (short names only).
-	if tgs := decodeJSONSlice(lazy["targetGroups"]); len(tgs) > 0 {
+	if tgs := format.DecodeJSONSlice(lazy["targetGroups"]); len(tgs) > 0 {
 		short := make([]string, 0, len(tgs))
 		for _, arn := range tgs {
 			short = append(short, lastARNSegment(arn))
@@ -202,10 +203,10 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 
 	// Created / Updated with relative age.
 	if ts := lazy["createdAt"]; ts != "" {
-		rows = append(rows, services.DetailRow{Label: "Created", Value: formatTimeAge(ts)})
+		rows = append(rows, services.DetailRow{Label: "Created", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 	if ts := lazy["updatedAt"]; ts != "" {
-		rows = append(rows, services.DetailRow{Label: "Updated", Value: formatTimeAge(ts)})
+		rows = append(rows, services.DetailRow{Label: "Updated", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
 	// Log group (already shown in the existing renderDetails caller;
@@ -217,7 +218,7 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 
 	// Recent events — blank separator row, section header, then up to
 	// 5 event lines.
-	if events := decodeJSONSlice(lazy["events"]); len(events) > 0 {
+	if events := format.DecodeJSONSlice(lazy["events"]); len(events) > 0 {
 		rows = append(rows, services.DetailRow{}) // blank spacer
 		rows = append(rows, services.DetailRow{Value: styleHeader.Render("Recent events")})
 		for _, ev := range events {
@@ -237,47 +238,6 @@ func boolString(b bool) string {
 		return "true"
 	}
 	return "false"
-}
-
-// decodeJSONSlice unmarshals a JSON-encoded []string out of a lazy
-// map slot. Returns nil on empty input or decode failure so callers
-// can treat "missing" and "empty" identically.
-func decodeJSONSlice(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	return out
-}
-
-// formatTimeAge returns "2026-04-13 15:42  (2h ago)" given a Unix
-// seconds string. Empty / unparseable input returns "".
-func formatTimeAge(s string) string {
-	var unix int64
-	_, err := fmt.Sscanf(s, "%d", &unix)
-	if err != nil || unix <= 0 {
-		return ""
-	}
-	t := time.Unix(unix, 0).Local()
-	age := time.Since(t)
-	return fmt.Sprintf("%s  %s", t.Format("2006-01-02 15:04"), styleDim.Render("("+humanDuration(age)+" ago)"))
-}
-
-// humanDuration renders a time.Duration as "34d", "6h", "12m", "45s".
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
 }
 
 // colorStatus renders an ECS service status with a red/yellow/green

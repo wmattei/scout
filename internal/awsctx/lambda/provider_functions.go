@@ -2,7 +2,6 @@ package lambda
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wagnermattei/better-aws-cli/internal/format"
 	"github.com/wagnermattei/better-aws-cli/internal/services"
 )
 
@@ -136,7 +136,7 @@ func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string
 	rows = append(rows, services.DetailRow{Label: "Log group", Value: "/aws/lambda/" + r.DisplayName})
 
 	// Layers.
-	if layers := decodeStringSlice(lazy["layers"]); len(layers) > 0 {
+	if layers := format.DecodeJSONSlice(lazy["layers"]); len(layers) > 0 {
 		rows = append(rows, services.DetailRow{})
 		rows = append(rows, services.DetailRow{Value: styleHeader.Render(fmt.Sprintf("Layers (%d)", len(layers)))})
 		for _, l := range layers {
@@ -145,7 +145,7 @@ func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string
 	}
 
 	// Tags — first 5, sorted by key for stable rendering across polls.
-	if tags := decodeStringMap(lazy["tags"]); len(tags) > 0 {
+	if tags := format.DecodeStringMap(lazy["tags"]); len(tags) > 0 {
 		keys := make([]string, 0, len(tags))
 		for k := range tags {
 			keys = append(keys, k)
@@ -166,30 +166,6 @@ func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string
 
 // --- helpers ---------------------------------------------------------------
 
-// decodeStringSlice unmarshals a JSON-encoded []string from the lazy map.
-func decodeStringSlice(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	return out
-}
-
-// decodeStringMap unmarshals a JSON-encoded map[string]string from the lazy map.
-func decodeStringMap(s string) map[string]string {
-	if s == "" {
-		return nil
-	}
-	var out map[string]string
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
-		return nil
-	}
-	return out
-}
-
 // formatLastModified parses the Lambda lastModified string (RFC3339-like)
 // and returns a human-readable "YYYY-MM-DD HH:MM  (Xd ago)" string.
 // Lambda returns timestamps in the form "2026-04-01T12:34:56.789+0000".
@@ -204,8 +180,8 @@ func formatLastModified(s string) string {
 		"2006-01-02T15:04:05.999Z07:00",
 	}
 	var t time.Time
-	for _, fmt := range formats {
-		if parsed, err := time.Parse(fmt, s); err == nil {
+	for _, f := range formats {
+		if parsed, err := time.Parse(f, s); err == nil {
 			t = parsed.Local()
 			break
 		}
@@ -214,7 +190,7 @@ func formatLastModified(s string) string {
 		return s
 	}
 	age := time.Since(t)
-	return fmt.Sprintf("%s  %s", t.Format("2006-01-02 15:04"), styleDim.Render("("+humanDuration(age)+" ago)"))
+	return fmt.Sprintf("%s  %s", t.Format("2006-01-02 15:04"), styleDim.Render("("+format.HumanDuration(age)+" ago)"))
 }
 
 // humanBytes formats a byte count as "1.2 MB", "345 KB", etc.
@@ -233,20 +209,6 @@ func humanBytes(b int64) string {
 		return fmt.Sprintf("%.0f KB", float64(b)/float64(KB))
 	default:
 		return fmt.Sprintf("%d B", b)
-	}
-}
-
-// humanDuration renders a time.Duration as "34d", "6h", "12m", "45s".
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
 
