@@ -60,7 +60,7 @@ func ListBuckets(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOption
 				continue
 			}
 			meta := map[string]string{
-				"region": ac.Region,
+				MetaRegion: ac.Region,
 			}
 			if b.CreationDate != nil {
 				meta["createdAt"] = fmt.Sprintf("%d", b.CreationDate.Unix())

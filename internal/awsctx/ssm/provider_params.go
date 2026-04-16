@@ -58,7 +58,7 @@ func (ssmParameterProvider) ConsoleURL(r core.Resource, region string, _ map[str
 
 // RenderMeta shows the parameter type (String / SecureString / StringList).
 func (ssmParameterProvider) RenderMeta(r core.Resource) string {
-	return r.Meta["type"]
+	return r.Meta[MetaType]
 }
 
 // ListAll delegates to ListParameters.
@@ -89,19 +89,19 @@ func (ssmParameterProvider) ResolveDetails(ctx context.Context, ac *awsctx.Conte
 		return nil, err
 	}
 	out := map[string]string{
-		"name":     d.Name,
-		"type":     d.Type,
-		"value":    d.Value,
-		"version":  fmt.Sprintf("%d", d.Version),
-		"dataType": d.DataType,
-		"arn":      d.ARN,
+		"name":            d.Name,
+		MetaType:          d.Type,
+		"value":           d.Value,
+		MetaVersion:       fmt.Sprintf("%d", d.Version),
+		"dataType":        d.DataType,
+		"arn":             d.ARN,
 	}
 	if !d.LastModified.IsZero() {
-		out["lastModified"] = fmt.Sprintf("%d", d.LastModified.Unix())
+		out[MetaLastModified] = fmt.Sprintf("%d", d.LastModified.Unix())
 	}
 	// Propagate description from Meta if GetParameter didn't return one.
-	if out["description"] == "" {
-		out["description"] = r.Meta["description"]
+	if out[MetaDescription] == "" {
+		out[MetaDescription] = r.Meta[MetaDescription]
 	}
 	return out, nil
 }
@@ -109,12 +109,12 @@ func (ssmParameterProvider) ResolveDetails(ctx context.Context, ac *awsctx.Conte
 // DetailRows builds the Details panel body for an SSM parameter.
 // Returns nil while lazy data is still in-flight.
 func (ssmParameterProvider) DetailRows(r core.Resource, lazy map[string]string) []services.DetailRow {
-	if lazy == nil || lazy["type"] == "" {
+	if lazy == nil || lazy[MetaType] == "" {
 		return nil
 	}
 
 	rows := []services.DetailRow{
-		{Label: "Type", Value: colorParamType(lazy["type"])},
+		{Label: "Type", Value: colorParamType(lazy[MetaType])},
 	}
 
 	// Value — truncate very long values.
@@ -124,11 +124,11 @@ func (ssmParameterProvider) DetailRows(r core.Resource, lazy map[string]string) 
 	}
 	rows = append(rows, services.DetailRow{Label: "Value", Value: value})
 
-	if v := lazy["version"]; v != "" {
+	if v := lazy[MetaVersion]; v != "" {
 		rows = append(rows, services.DetailRow{Label: "Version", Value: v})
 	}
 
-	if ts := lazy["lastModified"]; ts != "" {
+	if ts := lazy[MetaLastModified]; ts != "" {
 		rows = append(rows, services.DetailRow{Label: "Modified", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
@@ -136,7 +136,7 @@ func (ssmParameterProvider) DetailRows(r core.Resource, lazy map[string]string) 
 		rows = append(rows, services.DetailRow{Label: "Data type", Value: dt})
 	}
 
-	if desc := lazy["description"]; desc != "" {
+	if desc := lazy[MetaDescription]; desc != "" {
 		rows = append(rows, services.DetailRow{Label: "Desc", Value: desc})
 	}
 

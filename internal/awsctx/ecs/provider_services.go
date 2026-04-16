@@ -50,14 +50,14 @@ func (ecsServiceProvider) ARN(r core.Resource, _ map[string]string) string {
 }
 
 func (ecsServiceProvider) ConsoleURL(r core.Resource, region string, _ map[string]string) string {
-	cluster := r.Meta["cluster"]
+	cluster := r.Meta[MetaCluster]
 	svcName := lastARNSegment(r.Key)
 	return fmt.Sprintf("https://%s.console.aws.amazon.com/ecs/v2/clusters/%s/services/%s/health?region=%s",
 		region, url.PathEscape(cluster), url.PathEscape(svcName), region)
 }
 
 func (ecsServiceProvider) RenderMeta(r core.Resource) string {
-	return r.Meta["cluster"]
+	return r.Meta[MetaCluster]
 }
 
 func (ecsServiceProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
@@ -92,7 +92,7 @@ func (ecsServiceProvider) AlwaysRefresh() bool { return true }
 // string slots because the shared lazyDetails map is string-valued.
 // DetailRows decodes them on render.
 func (ecsServiceProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context, r core.Resource) (map[string]string, error) {
-	clusterArn := r.Meta["clusterArn"]
+	clusterArn := r.Meta[MetaClusterArn]
 	if clusterArn == "" {
 		return nil, nil
 	}
@@ -106,7 +106,7 @@ func (ecsServiceProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context
 		"desiredCount":             fmt.Sprintf("%d", d.DesiredCount),
 		"runningCount":             fmt.Sprintf("%d", d.RunningCount),
 		"pendingCount":             fmt.Sprintf("%d", d.PendingCount),
-		"launchType":               d.LaunchType,
+		MetaLaunchType:             d.LaunchType,
 		"platformVersion":          d.PlatformVersion,
 		"taskDefinition":           d.TaskDefinition,
 		"deploymentRolloutState":   d.DeploymentRolloutState,
@@ -162,13 +162,13 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 	}
 
 	rows := []services.DetailRow{
-		{Label: "Cluster", Value: r.Meta["cluster"]},
+		{Label: "Cluster", Value: r.Meta[MetaCluster]},
 		{Label: "Status", Value: colorStatus(lazy["status"])},
 		{Label: "Tasks", Value: colorTasks(lazy["desiredCount"], lazy["runningCount"], lazy["pendingCount"])},
 	}
 
 	// Launch + platform.
-	launch := lazy["launchType"]
+	launch := lazy[MetaLaunchType]
 	if pv := lazy["platformVersion"]; pv != "" {
 		launch = launch + "  ·  " + pv
 	}

@@ -40,27 +40,27 @@ func (objectProvider) SortPriority() int { return 200 }
 func (objectProvider) IsTopLevel() bool  { return false }
 
 func (objectProvider) ARN(r core.Resource, _ map[string]string) string {
-	return fmt.Sprintf("arn:aws:s3:::%s/%s", r.Meta["bucket"], r.Key)
+	return fmt.Sprintf("arn:aws:s3:::%s/%s", r.Meta[MetaBucket], r.Key)
 }
 
 func (objectProvider) URI(r core.Resource) (string, bool) {
-	return fmt.Sprintf("s3://%s/%s", r.Meta["bucket"], r.Key), true
+	return fmt.Sprintf("s3://%s/%s", r.Meta[MetaBucket], r.Key), true
 }
 
 func (objectProvider) ConsoleURL(r core.Resource, region string, _ map[string]string) string {
-	bucket := r.Meta["bucket"]
+	bucket := r.Meta[MetaBucket]
 	return fmt.Sprintf("https://s3.console.aws.amazon.com/s3/object/%s?region=%s&prefix=%s",
 		url.PathEscape(bucket), region, url.QueryEscape(r.Key))
 }
 
 func (objectProvider) RenderMeta(r core.Resource) string {
 	var parts []string
-	if s, ok := r.Meta["size"]; ok && s != "" {
+	if s, ok := r.Meta[MetaSize]; ok && s != "" {
 		if b := format.Bytes(s); b != "" {
 			parts = append(parts, b)
 		}
 	}
-	if ts, ok := r.Meta["mtime"]; ok && ts != "" {
+	if ts, ok := r.Meta[MetaMtime]; ok && ts != "" {
 		parts = append(parts, formatUnixTimeOrEmpty(ts))
 	}
 	return strings.Join(parts, "  ")

@@ -22,7 +22,7 @@ func execForceDeploy(m Model) (Model, tea.Cmd) {
 		m.toast = newToast("force deploy is only available for ECS services", 3*time.Second)
 		return m, nil
 	}
-	cluster := m.detailsResource.Meta["clusterArn"]
+	cluster := m.detailsResource.Meta["clusterArn"] // see ecs.MetaClusterArn
 	service := m.detailsResource.Key
 	if cluster == "" || service == "" {
 		m.toast = newToast("missing cluster or service ARN", 3*time.Second)
@@ -37,7 +37,7 @@ func execForceDeploy(m Model) (Model, tea.Cmd) {
 // doForceDeploy is called after the user confirms with 'y'. It fires
 // the actual UpdateService call.
 func doForceDeploy(m Model) (Model, tea.Cmd) {
-	cluster := m.detailsResource.Meta["clusterArn"]
+	cluster := m.detailsResource.Meta["clusterArn"] // see ecs.MetaClusterArn
 	service := m.detailsResource.Key
 	m.pendingConfirm = confirmNone
 	m.inFlight = true
