@@ -9,6 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/wagnermattei/better-aws-cli/internal/format"
+
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
@@ -65,7 +67,7 @@ func downloadCmd(ac *awsctx.Context, bucket, key, dest string) tea.Cmd {
 			}
 		}
 		return msgActionDone{
-			toast: fmt.Sprintf("downloaded %s (%s)", dest, formatBytes(fmt.Sprintf("%d", n))),
+			toast: fmt.Sprintf("downloaded %s (%s)", dest, format.Bytes(fmt.Sprintf("%d", n))),
 			err:   nil,
 		}
 	}

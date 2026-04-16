@@ -8,6 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/wagnermattei/better-aws-cli/internal/format"
+
 	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
 	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
 	"github.com/wagnermattei/better-aws-cli/internal/core"
@@ -58,7 +60,7 @@ func previewCmd(ac *awsctx.Context, bucket, key string) tea.Cmd {
 		}
 		if size > previewSizeLimit {
 			return msgActionDone{
-				toast: fmt.Sprintf("object too large for preview (%s > 100 MB)", formatBytes(fmt.Sprintf("%d", size))),
+				toast: fmt.Sprintf("object too large for preview (%s > 100 MB)", format.Bytes(fmt.Sprintf("%d", size))),
 				err:   fmt.Errorf("size %d over limit", size),
 			}
 		}
