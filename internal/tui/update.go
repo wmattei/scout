@@ -46,6 +46,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Keep the tail-logs viewport sized to the available body
+		// area so scroll math in Update uses the real terminal
+		// dimensions, not the 10-line default from NewModel.
+		vpHeight := m.height - 7 // input + 2 dividers + status + header + help + margin
+		if vpHeight < 1 {
+			vpHeight = 1
+		}
+		m.tailViewport.Width = m.width
+		m.tailViewport.Height = vpHeight
 		return m, nil
 
 	case tea.KeyMsg:
@@ -236,8 +245,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Soft cap on scrollback to keep memory bounded.
 			m.tailLines = m.tailLines[len(m.tailLines)-2000:]
 		}
+		// Only auto-scroll to the bottom if the user hasn't scrolled
+		// up to read history. This prevents new events from yanking
+		// the viewport away while the user is inspecting older lines.
+		wasAtBottom := m.tailViewport.AtBottom()
 		m.tailViewport.SetContent(strings.Join(m.tailLines, "\n"))
-		m.tailViewport.GotoBottom()
+		if wasAtBottom {
+			m.tailViewport.GotoBottom()
+		}
 		if m.tailStream != nil {
 			return m, tailLogsNextCmd(m.tailStream)
 		}
