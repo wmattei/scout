@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // renderDetails produces the full Details screen for the current
@@ -42,13 +41,40 @@ func renderDetails(m Model, width int) string {
 	writeField(&b, "Name", r.DisplayName)
 	writeField(&b, "ARN", detailsARN(r, m))
 
-	// Log group row when we've resolved task-def details and at least
-	// one log group is configured. Uses the same family-lookup logic as
-	// the Tail Logs action so services and task-def families share the
-	// same row.
-	if family := taskDefFamilyForDetails(m); family != "" {
-		if d, ok := m.taskDefDetails[family]; ok && d != nil && len(d.LogGroups) > 0 {
-			writeField(&b, "Log", d.LogGroups[0])
+	// Per-provider extra detail rows. When the provider returns nil
+	// AND lazy resolution is in-flight, render a centered
+	// "resolving details…" placeholder instead of an empty gap.
+	// When the provider returns nil AND no resolution is happening,
+	// fall back to the legacy single "Log" row (for the types that
+	// don't implement DetailRows yet).
+	if p, ok := services.Get(r.Type); ok {
+		lazy := m.lazyDetailsFor(r)
+		rows := p.DetailRows(r, lazy)
+		switch {
+		case len(rows) > 0:
+			for _, row := range rows {
+				switch {
+				case row.Label == "" && row.Value == "":
+					b.WriteString("\n")
+				case row.Label == "":
+					b.WriteString("  ")
+					b.WriteString(row.Value)
+					b.WriteString("\n")
+				default:
+					writeFieldWide(&b, row.Label, row.Value)
+				}
+			}
+		case m.lazyDetailsState[lazyDetailKey{Type: r.Type, Key: r.Key}] == lazyStateInFlight:
+			b.WriteString("\n")
+			b.WriteString("  ")
+			b.WriteString(styleRowDim.Render("resolving details…"))
+			b.WriteString("\n")
+		default:
+			// Legacy fallback: types that haven't implemented
+			// DetailRows yet still get their Log row if available.
+			if group := p.LogGroup(r, lazy); group != "" {
+				writeField(&b, "Log", group)
+			}
 		}
 	}
 	b.WriteString("\n")
@@ -68,6 +94,16 @@ func renderDetails(m Model, width int) string {
 			indi = styleSelIndi.Render("▸ ")
 		}
 		line := fmt.Sprintf("%s%d. %s", indi, i+1, a.Label)
+
+		// Show a confirmation indicator next to the action that is
+		// waiting for y/n, so the user notices even if they miss the
+		// toast. The mapping from pendingConfirmType → action label
+		// is intentionally inline — if more confirmable actions are
+		// added, extend the switch here.
+		if m.pendingConfirmFn != nil && i == actionSel {
+			line += "  " + styleConfirmHint.Render("(confirm: y/n)")
+		}
+
 		if i == actionSel {
 			b.WriteString(styleRowSel.Width(width).Render(line))
 		} else {
@@ -80,27 +116,42 @@ func renderDetails(m Model, width int) string {
 	return b.String()
 }
 
-// detailsARN resolves the ARN shown in the Details view. For task-def
-// families it returns the lazily-resolved revision ARN if available;
-// otherwise it falls back to "…resolving" or the family pseudo-ARN.
+// detailsARN resolves the ARN shown in the Details view. While
+// resolution is in-flight it shows "…resolving"; otherwise it
+// delegates to the provider's ARN method with the lazy map so each
+// provider decides what ARN is authoritative for its type
+// (service ARN for ECS services, revision ARN for task-def families,
+// etc.). Falls back to core.Resource.ARN() when no provider is
+// registered.
 func detailsARN(r core.Resource, m Model) string {
-	if r.Type != core.RTypeEcsTaskDefFamily {
-		return r.ARN()
-	}
-	d, ok := m.taskDefDetails[r.Key]
-	if !ok {
-		return r.ARN()
-	}
-	if d == nil {
+	key := lazyDetailKey{Type: r.Type, Key: r.Key}
+	if m.lazyDetailsState[key] == lazyStateInFlight {
 		return "…resolving"
 	}
-	return d.ARN
+	lazy := m.lazyDetailsFor(r)
+	if p, ok := services.Get(r.Type); ok {
+		if a := p.ARN(r, lazy); a != "" {
+			return a
+		}
+	}
+	return ""
 }
 
 // writeField appends a single "  Label    Value" row to b.
 func writeField(b *strings.Builder, label, value string) {
 	b.WriteString("  ")
 	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 6)))
+	b.WriteString(" ")
+	b.WriteString(value)
+	b.WriteString("\n")
+}
+
+// writeFieldWide is like writeField but reserves a wider label column
+// for DetailRow output. The ECS service details panel has labels like
+// "Deployment" and "LB target" that don't fit the 6-rune budget.
+func writeFieldWide(b *strings.Builder, label, value string) {
+	b.WriteString("  ")
+	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 11)))
 	b.WriteString(" ")
 	b.WriteString(value)
 	b.WriteString("\n")
@@ -116,11 +167,3 @@ func padRightPlain(s string, n int) string {
 	return s + strings.Repeat(" ", n-len(s))
 }
 
-// styleDetailsHeader styles the "Details" / "Actions" section headers.
-var styleDetailsHeader = lipgloss.NewStyle().
-	Bold(true).
-	Foreground(lipgloss.AdaptiveColor{Light: "#005FAF", Dark: "#5FD7FF"})
-
-// styleDetailsLabel dims the field label so values read brighter.
-var styleDetailsLabel = lipgloss.NewStyle().
-	Foreground(lipgloss.AdaptiveColor{Light: "#767676", Dark: "#8A8A8A"})

@@ -1,0 +1,102 @@
+// Package ssm contains scout's thin wrappers around the AWS SSM SDK.
+package ssm
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
+)
+
+// ListParameters lists SSM Parameter Store parameters using DescribeParameters.
+// If opts.Prefix is set, a ParameterFilters Name+BeginsWith filter is applied
+// server-side. If opts.Limit is set, results are capped. When no limit is
+// specified the adapter caps at 200 internally so the TUI's service-scope
+// first-entry path doesn't paginate through thousands of parameters.
+func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptions) ([]core.Resource, error) {
+	client := awsssm.NewFromConfig(ac.Cfg)
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200 // sane default for interactive use
+	}
+
+	var resources []core.Resource
+	var nextToken *string
+
+	for {
+		input := &awsssm.DescribeParametersInput{
+			NextToken: nextToken,
+		}
+
+		// Cap page size at 50 (API hard limit).
+		remaining := limit - len(resources)
+		if remaining <= 0 {
+			break
+		}
+		maxResults := int32(remaining)
+		if maxResults > 50 {
+			maxResults = 50
+		}
+		input.MaxResults = &maxResults
+
+		// Server-side prefix filter via ParameterFilters.
+		if opts.Prefix != "" {
+			input.ParameterFilters = []types.ParameterStringFilter{
+				{
+					Key:    aws.String("Name"),
+					Option: aws.String("BeginsWith"),
+					Values: []string{opts.Prefix},
+				},
+			}
+		}
+
+		out, err := client.DescribeParameters(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("ssm:DescribeParameters: %w", err)
+		}
+
+		for _, p := range out.Parameters {
+			if p.Name == nil {
+				continue
+			}
+
+			meta := map[string]string{}
+			meta[MetaType] = string(p.Type)
+			if p.LastModifiedDate != nil {
+				meta[MetaLastModified] = fmt.Sprintf("%d", p.LastModifiedDate.Unix())
+			}
+			if p.Description != nil {
+				meta[MetaDescription] = *p.Description
+			}
+			meta[MetaTier] = string(p.Tier)
+			meta[MetaVersion] = fmt.Sprintf("%d", p.Version)
+
+			resources = append(resources, core.Resource{
+				Type:        core.RTypeSSMParameter,
+				Key:         *p.Name,
+				DisplayName: *p.Name,
+				Meta:        meta,
+			})
+
+			if len(resources) >= limit {
+				break
+			}
+		}
+
+		if opts.Limit > 0 && len(resources) >= opts.Limit {
+			break
+		}
+		if out.NextToken == nil {
+			break
+		}
+		nextToken = out.NextToken
+	}
+
+	return resources, nil
+}

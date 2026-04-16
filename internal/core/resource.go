@@ -3,9 +3,11 @@
 // internal packages — it is the root of the internal dependency graph.
 package core
 
-import "fmt"
+import (
+	"sync"
+)
 
-// ResourceType enumerates the kinds of AWS resources better-aws knows about.
+// ResourceType enumerates the kinds of AWS resources scout knows about.
 // Phase 1 only uses RTypeBucket, RTypeEcsService, and RTypeEcsTaskDefFamily.
 // RTypeFolder and RTypeObject exist for later phases and are declared here so
 // the TUI and index layers can pattern-match on the complete set.
@@ -17,6 +19,8 @@ const (
 	RTypeObject
 	RTypeEcsService
 	RTypeEcsTaskDefFamily
+	RTypeLambdaFunction
+	RTypeSSMParameter
 )
 
 // String returns a short machine name used in the SQLite schema's `type`
@@ -33,28 +37,15 @@ func (r ResourceType) String() string {
 		return "ecs_service"
 	case RTypeEcsTaskDefFamily:
 		return "ecs_taskdef"
+	case RTypeLambdaFunction:
+		return "lambda_function"
+	case RTypeSSMParameter:
+		return "ssm_parameter"
 	default:
 		return "unknown"
 	}
 }
 
-// Tag is the short label shown as a colored chip in the TUI.
-func (r ResourceType) Tag() string {
-	switch r {
-	case RTypeBucket:
-		return "S3"
-	case RTypeFolder:
-		return "DIR"
-	case RTypeObject:
-		return "OBJ"
-	case RTypeEcsService:
-		return "ECS"
-	case RTypeEcsTaskDefFamily:
-		return "TASK"
-	default:
-		return "???"
-	}
-}
 
 // Resource is the unified record for anything browsable in the TUI.
 //
@@ -77,27 +68,35 @@ type Resource struct {
 	Meta        map[string]string
 }
 
-// ARN returns a canonical AWS ARN for the resource. For folders and objects
-// a pseudo-ARN of the form arn:aws:s3:::<bucket>/<key> is used so the
-// details panel can always show an "ARN" row. Phase 1 only calls this for
-// buckets, services, and task def families — the folder/object branches are
-// pre-wired for Phase 2.
-func (r Resource) ARN() string {
-	switch r.Type {
-	case RTypeBucket:
-		return fmt.Sprintf("arn:aws:s3:::%s", r.Key)
-	case RTypeFolder, RTypeObject:
-		bucket := r.Meta["bucket"]
-		return fmt.Sprintf("arn:aws:s3:::%s/%s", bucket, r.Key)
-	case RTypeEcsService:
-		// Key is the full service ARN for ecs services.
-		return r.Key
-	case RTypeEcsTaskDefFamily:
-		// Latest revision is resolved lazily in later phases; for Phase 1
-		// we surface the family name so the details panel (when added) can
-		// show "…resolving" until DescribeTaskDefinition returns.
-		return fmt.Sprintf("arn:aws:ecs:*:*:task-definition/%s", r.Key)
-	default:
-		return ""
-	}
+// aliasRegistry is a process-global map from user-typed alias strings
+// (e.g. "s3", "ecs", "td") to the ResourceType they resolve to. It is
+// populated by the services package's Register function (which calls
+// RegisterAlias for every alias on each Provider). Keeping this here
+// in core rather than in services avoids the search→services import
+// cycle that would arise if search/scope.go imported services directly.
+var (
+	aliasMu       sync.RWMutex
+	aliasRegistry = map[string]ResourceType{}
+)
+
+// RegisterAlias adds an alias→type mapping. Called by services.Register
+// for each alias on a Provider. Silently overwrites on duplicate (the
+// services registry panics on duplicate aliases, so this is only ever
+// called once per alias).
+func RegisterAlias(alias string, t ResourceType) {
+	aliasMu.Lock()
+	defer aliasMu.Unlock()
+	aliasRegistry[alias] = t
 }
+
+// LookupAlias returns the resource type registered under the given alias
+// and a boolean reporting whether the lookup succeeded. Used by
+// search/scope.go to resolve "<alias>:" prefixes without importing the
+// services package (which would create an import cycle).
+func LookupAlias(alias string) (ResourceType, bool) {
+	aliasMu.RLock()
+	defer aliasMu.RUnlock()
+	t, ok := aliasRegistry[alias]
+	return t, ok
+}
+

@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // ListAtPrefix lists folders (virtual, via CommonPrefixes) and objects
@@ -57,7 +58,7 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 			Key:         full,
 			DisplayName: lastSegmentWithSlash(full),
 			Meta: map[string]string{
-				"bucket": bucket,
+				MetaBucket: bucket,
 			},
 		})
 	}
@@ -71,12 +72,12 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 		if full == prefix {
 			continue
 		}
-		meta := map[string]string{"bucket": bucket}
+		meta := map[string]string{MetaBucket: bucket}
 		if o.Size != nil {
-			meta["size"] = fmt.Sprintf("%d", *o.Size)
+			meta[MetaSize] = fmt.Sprintf("%d", *o.Size)
 		}
 		if o.LastModified != nil {
-			meta["mtime"] = fmt.Sprintf("%d", o.LastModified.Unix())
+			meta[MetaMtime] = fmt.Sprintf("%d", o.LastModified.Unix())
 		}
 		out = append(out, core.Resource{
 			Type:        core.RTypeObject,
@@ -105,4 +106,12 @@ func lastSegment(s string) string {
 		return s[i+1:]
 	}
 	return s
+}
+
+// formatUnixTimeFmt renders a Unix-second timestamp into the same
+// "YYYY-MM-DD HH:MM" shape used by the TUI's results view. Lives
+// here rather than in the TUI so providers can reuse it without
+// pulling in the tui package.
+func formatUnixTimeFmt(n int64) string {
+	return time.Unix(n, 0).Local().Format("2006-01-02 15:04")
 }

@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Prefix runs a case-sensitive prefix match of `query` against each

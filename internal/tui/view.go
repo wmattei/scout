@@ -35,6 +35,8 @@ func (m Model) View() string {
 		body = padBlock(body, bodyHeight)
 	case modeTailLogs:
 		body = renderTailLogs(m, bodyHeight)
+	case modeSwitcher:
+		body = renderSwitcher(m.switcher, m.width, bodyHeight)
 	default:
 		body = m.renderSearchBody(bodyHeight)
 	}
@@ -71,7 +73,7 @@ func (m Model) renderSearchBody(height int) string {
 	inputValue := m.input.Value()
 	switch {
 	case inputValue == "" && m.memory.Len() == 0:
-		emptyMsg = "cache is empty — fetching…"
+		emptyMsg = "empty cache — run `scout preload all` or type a service scope (s3:, ecs:, td:)"
 	case inputValue == "":
 		emptyMsg = "start typing to search cached resources"
 	case m.isLoadingScoped() && len(visible) == 0:

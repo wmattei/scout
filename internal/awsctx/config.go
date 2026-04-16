@@ -12,7 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go/logging"
+
+	"github.com/wmattei/scout/internal/debuglog"
 )
 
 // Context is the resolved AWS environment for the current session. Phase 1
@@ -49,12 +50,13 @@ func Resolve(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("no region resolved for profile %q — set AWS_REGION or configure 'region' in ~/.aws/config", profile)
 	}
 
-	// Silence the default SDK logger so stray WARN/INFO lines don't
-	// bleed onto the alt-screen and shift the TUI frame. A common
-	// offender is the S3 GetObject "response has no supported checksum"
-	// warning that fires on pre-checksum uploads. Phase 4 will swap
-	// Nop{} for a file-backed logger gated on BETTER_AWS_DEBUG=1.
-	cfg.Logger = logging.Nop{}
+	// Route the SDK logger through debuglog. When SCOUT_DEBUG is
+	// unset the adapter is smithy's Nop{}, so no output hits the
+	// terminal and the alt-screen frame stays stable. With the env
+	// var set, SDK records flow into
+	// $XDG_CACHE_HOME/scout/debug.log alongside app-level
+	// events.
+	cfg.Logger = debuglog.SDKLogger()
 
 	return &Context{
 		Profile: profile,

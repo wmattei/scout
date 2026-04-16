@@ -9,7 +9,7 @@ package search
 import (
 	"github.com/sahilm/fuzzy"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // Result is one row in a search result list, with enough metadata for the

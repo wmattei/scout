@@ -9,9 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/format"
+
+	"github.com/wmattei/scout/internal/awsctx"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // execDownload streams the selected S3 object into the user's downloads
@@ -65,7 +67,7 @@ func downloadCmd(ac *awsctx.Context, bucket, key, dest string) tea.Cmd {
 			}
 		}
 		return msgActionDone{
-			toast: fmt.Sprintf("downloaded %s (%s)", dest, formatBytes(fmt.Sprintf("%d", n))),
+			toast: fmt.Sprintf("downloaded %s (%s)", dest, format.Bytes(fmt.Sprintf("%d", n))),
 			err:   nil,
 		}
 	}

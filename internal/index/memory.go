@@ -4,8 +4,64 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
+
+// topLevelTypes is the set of resource types that Memory.All() should
+// return. The TUI layer wires this up at startup via SetTopLevelTypes
+// (see cmd/scout/main.go); index can't import the services
+// registry directly because services depends on internal/awsctx,
+// which depends on... etc — a cycle.
+var topLevelTypes = []core.ResourceType{
+	core.RTypeBucket,
+	core.RTypeEcsService,
+	core.RTypeEcsTaskDefFamily,
+}
+
+var topLevelPriority = map[core.ResourceType]int{
+	core.RTypeBucket:           0,
+	core.RTypeEcsService:       1,
+	core.RTypeEcsTaskDefFamily: 2,
+}
+
+// SetTopLevelTypes overrides the default list of top-level resource
+// types. The new list replaces the hardcoded default. Callers also
+// pass a per-type priority map for stable sort ordering. Calling with
+// nil for either argument restores the hardcoded defaults.
+func SetTopLevelTypes(types []core.ResourceType, priority map[core.ResourceType]int) {
+	if types == nil {
+		topLevelTypes = []core.ResourceType{
+			core.RTypeBucket,
+			core.RTypeEcsService,
+			core.RTypeEcsTaskDefFamily,
+		}
+	} else {
+		topLevelTypes = append([]core.ResourceType{}, types...)
+	}
+	if priority == nil {
+		topLevelPriority = map[core.ResourceType]int{
+			core.RTypeBucket:           0,
+			core.RTypeEcsService:       1,
+			core.RTypeEcsTaskDefFamily: 2,
+		}
+	} else {
+		topLevelPriority = make(map[core.ResourceType]int, len(priority))
+		for k, v := range priority {
+			topLevelPriority[k] = v
+		}
+	}
+}
+
+// isTopLevelType reports whether the given type is in the current
+// top-level set.
+func isTopLevelType(t core.ResourceType) bool {
+	for _, tl := range topLevelTypes {
+		if tl == t {
+			return true
+		}
+	}
+	return false
+}
 
 // Memory is the in-RAM, read-mostly view of the cache that the TUI searches
 // against. It is rebuilt on startup from a DB.LoadAll() call and mutated by
@@ -65,6 +121,26 @@ func (m *Memory) DeleteMissing(t core.ResourceType, keep map[string]struct{}) {
 	}
 }
 
+// ByType returns a snapshot slice of every top-level resource matching
+// the given type. Used by the service-scope search feature to restrict
+// fuzzy matching to a single resource type without touching All(). The
+// result is sorted lexicographically by DisplayName for deterministic
+// ordering.
+func (m *Memory) ByType(t core.ResourceType) []core.Resource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]core.Resource, 0)
+	for _, r := range m.byTypeKey {
+		if r.Type == t {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].DisplayName < out[j].DisplayName
+	})
+	return out
+}
+
 // Len returns the number of top-level resources currently held. Used by
 // the TUI to distinguish "cache genuinely empty" from "user hasn't typed
 // yet" for the empty-state message.
@@ -73,8 +149,7 @@ func (m *Memory) Len() int {
 	defer m.mu.RUnlock()
 	n := 0
 	for _, r := range m.byTypeKey {
-		switch r.Type {
-		case core.RTypeBucket, core.RTypeEcsService, core.RTypeEcsTaskDefFamily:
+		if isTopLevelType(r.Type) {
 			n++
 		}
 	}
@@ -93,32 +168,17 @@ func (m *Memory) All() []core.Resource {
 	defer m.mu.RUnlock()
 	out := make([]core.Resource, 0, len(m.byTypeKey))
 	for _, r := range m.byTypeKey {
-		switch r.Type {
-		case core.RTypeBucket, core.RTypeEcsService, core.RTypeEcsTaskDefFamily:
+		if isTopLevelType(r.Type) {
 			out = append(out, r)
 		}
 	}
-	// Stable order helps the TUI render deterministically when the query is
-	// empty. Sort primarily by type priority, then lexicographically by name.
 	sort.Slice(out, func(i, j int) bool {
-		if pri(out[i].Type) != pri(out[j].Type) {
-			return pri(out[i].Type) < pri(out[j].Type)
+		pi, pj := topLevelPriority[out[i].Type], topLevelPriority[out[j].Type]
+		if pi != pj {
+			return pi < pj
 		}
 		return out[i].DisplayName < out[j].DisplayName
 	})
 	return out
 }
 
-// pri returns a ranking priority for stable sort. Lower = earlier in the list.
-func pri(t core.ResourceType) int {
-	switch t {
-	case core.RTypeBucket:
-		return 0
-	case core.RTypeEcsService:
-		return 1
-	case core.RTypeEcsTaskDefFamily:
-		return 2
-	default:
-		return 99
-	}
-}

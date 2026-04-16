@@ -3,12 +3,12 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // renderResults returns a string containing every visible row, one per line.
@@ -58,8 +58,15 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 			indi = styleSelIndi.Render("▸ ")
 		}
 
-		// 2. Tag.
-		tag := tagStyleFor(r.Resource.Type).Render(padTag(r.Resource.Type.Tag()))
+		// 2. Tag — pulled from the per-type Provider so styles.go
+		// no longer needs to know which colors belong to which
+		// resource.
+		tag := ""
+		if p, ok := services.Get(r.Resource.Type); ok {
+			tag = p.TagStyle().Render(padTag(p.TagLabel()))
+		} else {
+			tag = padTag("???")
+		}
 
 		// 3. Meta (right-aligned).
 		meta := renderMeta(r.Resource)
@@ -136,70 +143,20 @@ func renderNameWithHighlights(name string, matchIdx []int, maxWidth int) string 
 	return b.String()
 }
 
-// renderMeta produces the right-aligned meta column for a resource.
-// Phase 1 shows region for buckets and cluster name for ecs services.
-// Phase 2 adds mtime for folders and size + mtime for objects. Task def
-// families have no meta yet.
+// renderMeta returns the dim-styled meta column for a result row,
+// pulled from the per-type Provider. Providers return plain strings
+// — this function owns the styleRowDim wrapping so colors stay
+// centralized in the styles file.
 func renderMeta(r core.Resource) string {
-	switch r.Type {
-	case core.RTypeBucket:
-		return styleRowDim.Render(r.Meta["region"])
-	case core.RTypeEcsService:
-		return styleRowDim.Render(r.Meta["cluster"])
-	case core.RTypeFolder:
-		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
-			return styleRowDim.Render(formatUnixTime(ts))
-		}
-		return ""
-	case core.RTypeObject:
-		var parts []string
-		if s, ok := r.Meta["size"]; ok && s != "" {
-			parts = append(parts, formatBytes(s))
-		}
-		if ts, ok := r.Meta["mtime"]; ok && ts != "" {
-			parts = append(parts, formatUnixTime(ts))
-		}
-		return styleRowDim.Render(strings.Join(parts, "  "))
-	default:
+	p, ok := services.Get(r.Type)
+	if !ok {
 		return ""
 	}
-}
-
-// formatBytes turns a decimal byte-count string into a human-readable
-// suffix ("12.4 MB"). Empty or unparseable input returns "".
-func formatBytes(s string) string {
-	var n int64
-	_, err := fmt.Sscanf(s, "%d", &n)
-	if err != nil || n < 0 {
+	plain := p.RenderMeta(r)
+	if plain == "" {
 		return ""
 	}
-	const (
-		kib = 1024
-		mib = kib * 1024
-		gib = mib * 1024
-	)
-	switch {
-	case n >= gib:
-		return fmt.Sprintf("%.1f GB", float64(n)/float64(gib))
-	case n >= mib:
-		return fmt.Sprintf("%.1f MB", float64(n)/float64(mib))
-	case n >= kib:
-		return fmt.Sprintf("%.1f KB", float64(n)/float64(kib))
-	default:
-		return fmt.Sprintf("%d B", n)
-	}
-}
-
-// formatUnixTime turns a decimal Unix seconds string into a short
-// "YYYY-MM-DD HH:MM" timestamp in the local timezone. Empty or
-// unparseable input returns "".
-func formatUnixTime(s string) string {
-	var n int64
-	_, err := fmt.Sscanf(s, "%d", &n)
-	if err != nil || n <= 0 {
-		return ""
-	}
-	return time.Unix(n, 0).Local().Format("2006-01-02 15:04")
+	return styleRowDim.Render(plain)
 }
 
 // padRight pads s with spaces on the right so its visual width equals n.

@@ -7,23 +7,53 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// ToastLevel tags a toast as informational or as an error. Errors get
+// the red style variant and a slightly longer default lifetime so the
+// user can actually read the message.
+type ToastLevel int
+
+const (
+	ToastInfo ToastLevel = iota
+	ToastError
+	ToastSuccess
+)
+
 // Toast is a transient bottom-centered overlay displayed over whatever
-// screen is currently rendered. Phase 2 only shows toasts for action
-// stubs; Phase 4 re-uses the same machinery for AWS errors and credential
-// failures.
-//
-// A zero-valued Toast is "inactive": renderToast returns "" and the view
-// layer skips the overlay.
+// screen is currently rendered. A zero-valued Toast is "inactive":
+// renderToast returns "" and the view layer skips the overlay.
 type Toast struct {
 	Message   string
 	ExpiresAt time.Time
+	Level     ToastLevel
 }
 
-// newToast returns a Toast that expires after `dur` from now.
+// newToast returns an info-level Toast that expires after dur.
 func newToast(message string, dur time.Duration) Toast {
 	return Toast{
 		Message:   message,
 		ExpiresAt: time.Now().Add(dur),
+		Level:     ToastInfo,
+	}
+}
+
+// newSuccessToast returns a green success-level Toast. Used for
+// confirmations of completed destructive actions so the positive
+// outcome is visually distinct from the neutral info toast.
+func newSuccessToast(message string) Toast {
+	return Toast{
+		Message:   message,
+		ExpiresAt: time.Now().Add(4 * time.Second),
+		Level:     ToastSuccess,
+	}
+}
+
+// newErrorToast returns an error-level Toast that stays up for 6s by
+// default so the user has time to read it.
+func newErrorToast(message string) Toast {
+	return Toast{
+		Message:   message,
+		ExpiresAt: time.Now().Add(6 * time.Second),
+		Level:     ToastError,
 	}
 }
 
@@ -33,9 +63,8 @@ func (t Toast) isActive() bool {
 }
 
 // renderToast returns a single-line overlay string centered horizontally,
-// or "" if the toast is inactive. The caller is responsible for composing
-// this into the final frame (replacing the bottom divider for the toast's
-// lifetime). width is the full frame width.
+// or "" if the toast is inactive. Errors render in a red style; info
+// toasts use the default purple style. width is the full frame width.
 func renderToast(t Toast, width int) string {
 	if !t.isActive() {
 		return ""
@@ -46,7 +75,14 @@ func renderToast(t Toast, width int) string {
 	if lipglossWidth(inner) > width-padding {
 		inner = inner[:width-padding-1] + "…"
 	}
-	boxed := styleToast.Render(inner)
+	style := styleToast
+	switch t.Level {
+	case ToastError:
+		style = styleToastError
+	case ToastSuccess:
+		style = styleToastSuccess
+	}
+	boxed := style.Render(inner)
 	left := (width - lipglossWidth(boxed)) / 2
 	if left < 0 {
 		left = 0
@@ -54,9 +90,8 @@ func renderToast(t Toast, width int) string {
 	return strings.Repeat(" ", left) + boxed
 }
 
-// styleToast is defined here rather than in styles.go to keep the toast
-// component fully self-contained — it is the only consumer. Phase 4 can
-// promote it to styles.go once error-surface toasts share the look.
+// styleToast is the default (info) toast look. styleToastError is
+// declared in styles.go alongside the rest of the palette.
 var styleToast = lipgloss.NewStyle().
 	Bold(true).
 	Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFFFF"}).

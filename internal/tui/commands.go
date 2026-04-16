@@ -6,75 +6,42 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/awsctx"
-	awsecs "github.com/wagnermattei/better-aws-cli/internal/awsctx/ecs"
-	awslogs "github.com/wagnermattei/better-aws-cli/internal/awsctx/logs"
-	awss3 "github.com/wagnermattei/better-aws-cli/internal/awsctx/s3"
-	"github.com/wagnermattei/better-aws-cli/internal/core"
-	"github.com/wagnermattei/better-aws-cli/internal/index"
-	"github.com/wagnermattei/better-aws-cli/internal/search"
+	"github.com/wmattei/scout/internal/awsctx"
+	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
 )
 
-// refreshTopLevelCmd kicks off SWR refresh for buckets + ecs services +
-// ecs task-def families concurrently. Each subtask writes its results to
-// both the in-memory index and the SQLite cache, then emits
-// msgResourcesUpdated so the UI can re-render.
-//
-// Errors are swallowed for Phase 1 — the user sees a stale cache with no
-// indication of what went wrong. Phase 4 adds an error toast.
-func refreshTopLevelCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory) tea.Cmd {
+// refreshServiceCmd fires a live fetch for a single resource type,
+// persists the result, and emits msgResourcesUpdated. Used by the
+// manual service-scope feature: the first time a session enters
+// "<alias>:", the TUI fires this to populate the in-memory index with
+// fresh data for just that type. The full top-level refresh used to
+// run on launch but was retired in favour of the explicit
+// `scout preload <service>` subcommand — every refresh now
+// either user-typed (a service scope) or user-invoked (the
+// subcommand).
+func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t core.ResourceType) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
 
-		type subtaskResult struct {
-			typ core.ResourceType
-			rs  []core.Resource
-			err error
+		p, ok := services.Get(t)
+		if !ok {
+			return msgResourcesUpdated{}
 		}
-
-		// Run the three subtasks sequentially for Phase 1. Interleaved
-		// updates are a Phase 2 improvement; Phase 1 prioritizes
-		// simplicity and determinism.
-		subtasks := []func() subtaskResult{
-			func() subtaskResult {
-				rs, err := awss3.ListBuckets(ctx, ac)
-				return subtaskResult{core.RTypeBucket, rs, err}
-			},
-			func() subtaskResult {
-				rs, err := awsecs.ListServices(ctx, ac)
-				return subtaskResult{core.RTypeEcsService, rs, err}
-			},
-			func() subtaskResult {
-				rs, err := awsecs.ListTaskDefFamilies(ctx, ac)
-				return subtaskResult{core.RTypeEcsTaskDefFamily, rs, err}
-			},
+		rs, err := p.ListAll(ctx, ac, awsctx.ListOptions{})
+		if err != nil {
+			return msgResourcesUpdated{errors: []string{err.Error()}}
 		}
-		for _, run := range subtasks {
-			res := run()
-			if res.err == nil {
-				persist(ctx, db, mem, res.typ, res.rs)
-			}
+		if err := index.Persist(ctx, db, mem, t, rs); err != nil {
+			return msgResourcesUpdated{errors: []string{err.Error()}}
 		}
-		cancel()
 		return msgResourcesUpdated{}
 	}
-}
-
-// persist applies a diff-patch: upsert all received resources, then delete
-// any resources of this type that were NOT in the fresh set. Writes go to
-// the in-memory index first (instant UI snap) and then to SQLite.
-func persist(ctx context.Context, db *index.DB, mem *index.Memory, t core.ResourceType, rs []core.Resource) {
-	// 1. In-memory: upsert + delete-missing for this type.
-	keep := make(map[string]struct{}, len(rs))
-	for _, r := range rs {
-		keep[r.Key] = struct{}{}
-	}
-	mem.Upsert(rs)
-	mem.DeleteMissing(t, keep)
-
-	// 2. Persist to SQLite.
-	_ = db.UpsertResources(ctx, rs)
-	_ = db.DeleteMissing(ctx, t, keep)
 }
 
 // resolveAccountCmd calls sts:GetCallerIdentity once and reports the account
@@ -119,12 +86,12 @@ func scopedSearchCmd(ac *awsctx.Context, db *index.DB, query string) tea.Cmd {
 		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, livePrefix, MaxDisplayedResults)
 		if err != nil {
 			// On live failure, return whatever was in the cache so the
-			// UI still shows something. Phase 4's error toast will
-			// surface the error itself. search.Prefix both filters by
-			// the leaf and attaches the highlight span.
+			// UI still shows something and forward the error text so
+			// the Update handler can pop a toast.
 			return msgScopedResults{
 				query:   query,
 				results: search.Prefix(scope.Leaf, cached, MaxDisplayedResults),
+				err:     "scoped search failed: " + err.Error(),
 			}
 		}
 
@@ -160,33 +127,41 @@ func mergeByKey(a, b []core.Resource) []core.Resource {
 	return out
 }
 
-// msgTaskDefResolved carries the result of a DescribeFamily call for the
-// given family. The handler populates m.taskDefDetails[family] so the
-// Details view and action commands can read it.
-type msgTaskDefResolved struct {
-	family  string
-	details *awsecs.TaskDefDetails
+// msgLazyDetailsResolved carries the result of a generic lazy-detail
+// resolution started from the Enter handler. The handler stores the
+// returned map in m.lazyDetails keyed by msg.key.
+type msgLazyDetailsResolved struct {
+	key     lazyDetailKey
+	details map[string]string
 	err     error
 }
 
-// resolveTaskDefCmd kicks off a DescribeFamily call for the given family.
-// The handler for msgTaskDefResolved stores the result in
-// m.taskDefDetails so the Details view's ARN row and the Tail Logs
-// action can read it.
-func resolveTaskDefCmd(ac *awsctx.Context, family string) tea.Cmd {
+// resolveLazyDetailsCmd dispatches a provider's ResolveDetails as a
+// tea.Cmd. The caller is responsible for marking
+// m.lazyDetailsState[key] = lazyStateInFlight before returning this
+// command from Update — the message handler flips it to
+// lazyStateResolved on completion.
+func resolveLazyDetailsCmd(ac *awsctx.Context, p services.Provider, r core.Resource) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		d, err := awsecs.DescribeFamily(ctx, ac, family)
-		return msgTaskDefResolved{family: family, details: d, err: err}
+		details, err := p.ResolveDetails(ctx, ac, r)
+		return msgLazyDetailsResolved{
+			key:     lazyDetailKey{Type: r.Type, Key: r.Key},
+			details: details,
+			err:     err,
+		}
 	}
 }
 
 // msgTailStarted marks a successful StartLiveTail call. The handler
 // stashes the stream on the model and schedules the first tailLogsNextCmd.
+// historicalLines carries pre-formatted lines from GetRecentEvents so the
+// viewport isn't empty while the user waits for the first live event.
 type msgTailStarted struct {
-	stream *awslogs.TailStream
-	err    error
+	stream          *awslogs.TailStream
+	historicalLines []string
+	err             error
 }
 
 // msgTailEvent carries one streamed log event to the Update loop. An
@@ -197,13 +172,27 @@ type msgTailEvent struct {
 	eof bool
 }
 
-// tailLogsStartCmd opens the StartLiveTail stream for the given log
-// group. The returned tea.Cmd emits msgTailStarted; the Update handler
-// stores the stream and schedules the first msgTailEvent pump.
+// tailLogsStartCmd first fetches the most recent 50 log events from
+// the log group (last 30 minutes), then opens the StartLiveTail
+// stream. The historical events are pre-formatted and carried on
+// msgTailStarted so the handler can seed the viewport before the
+// first live event arrives. A visual divider line separates old logs
+// from new ones in the viewport.
 func tailLogsStartCmd(ac *awsctx.Context, group, account string) tea.Cmd {
 	return func() tea.Msg {
-		stream, err := awslogs.StartLiveTail(context.Background(), ac, group, account)
-		return msgTailStarted{stream: stream, err: err}
+		ctx := context.Background()
+
+		// 1. Fetch recent historical events (best-effort).
+		var historical []string
+		if events, err := awslogs.GetRecentEvents(ctx, ac, group, 50, 30*time.Minute); err == nil && len(events) > 0 {
+			for _, ev := range events {
+				historical = append(historical, formatTailLine(ev))
+			}
+		}
+
+		// 2. Open the live-tail stream.
+		stream, err := awslogs.StartLiveTail(ctx, ac, group, account)
+		return msgTailStarted{stream: stream, historicalLines: historical, err: err}
 	}
 }
 
@@ -221,6 +210,52 @@ func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
 			return msgTailEvent{ev: ev}
 		case err := <-stream.Err:
 			return msgTailEvent{err: err, eof: true}
+		}
+	}
+}
+
+// msgSwitcherCommitted carries the outcome of a profile/region swap.
+// On success, the new Context replaces m.awsCtx, the new DB handle
+// replaces m.db, and the in-memory index is swapped to the freshly
+// loaded cache. On failure, the old state is preserved and an error
+// toast is raised.
+type msgSwitcherCommitted struct {
+	ctx    *awsctx.Context
+	db     *index.DB
+	memory *index.Memory
+	err    error
+}
+
+// commitSwitcherCmd runs the heavy lifting of a profile/region swap
+// off the UI goroutine: load a new aws.Config via ResolveForProfile,
+// open the matching SQLite file, LoadAll() into a fresh Memory, and
+// return everything via msgSwitcherCommitted. The UI handler does
+// the final state assignment so the swap is atomic from the Update
+// loop's perspective.
+func commitSwitcherCmd(profile, region string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		newCtx, err := awsctx.ResolveForProfile(ctx, profile, region)
+		if err != nil {
+			return msgSwitcherCommitted{err: err}
+		}
+		newDB, err := index.Open(newCtx.Profile, newCtx.Region)
+		if err != nil {
+			return msgSwitcherCommitted{err: err}
+		}
+		cached, err := newDB.LoadAll(ctx)
+		if err != nil {
+			_ = newDB.Close()
+			return msgSwitcherCommitted{err: err}
+		}
+		mem := index.NewMemory()
+		mem.Load(cached)
+		return msgSwitcherCommitted{
+			ctx:    newCtx,
+			db:     newDB,
+			memory: mem,
 		}
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
 )
 
 // UpsertBucketContents writes every resource in `rs` to the bucket_contents

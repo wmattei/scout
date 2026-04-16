@@ -3,7 +3,8 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wagnermattei/better-aws-cli/internal/core"
+	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/services"
 )
 
 // Action is a single selectable entry in the Details view's Actions list.
@@ -28,51 +29,56 @@ type ActionExecute func(m Model) (Model, tea.Cmd)
 
 // msgActionDone is emitted by any in-flight async action when its work
 // completes. The dispatcher in update.go handles the message by clearing
-// `inFlight` and showing the resulting toast.
+// `inFlight` and showing the resulting toast. If refetchDetails is true,
+// the handler also invalidates the lazyDetails cache for the current
+// resource and re-fires ResolveDetails so the Details panel shows fresh
+// data (used by SSM Update Value after PutParameter succeeds).
 type msgActionDone struct {
-	toast string
-	err   error
+	toast          string
+	err            error
+	refetchDetails bool
+	success        bool // render as a green success toast instead of neutral info
 }
 
-// ActionsFor returns the ordered action list for a resource type. The
-// Execute fields are left nil in this declaration and populated by each
-// action-implementation task so this file stays a single source of truth
-// for ordering, labeling, and hotkey assignment.
+// actionExecuteRegistry maps action IDs (as returned by ActionDef.ID) to
+// their Execute functions. Adding actions for a new service means:
+// (a) add ActionDefs in the provider's Actions() method with matching IDs,
+// (b) add Execute entries here. If an ID isn't in the registry, Execute
+// is nil and the dispatcher falls through to the "not yet implemented" toast.
+var actionExecuteRegistry = map[string]ActionExecute{
+	"open":         execOpenInBrowser,
+	"copy-arn":     execCopyARN,
+	"copy-uri":     execCopyURI,
+	"force-deploy": execForceDeploy,
+	"tail-logs":    execTailLogs,
+	"download":     execDownload,
+	"preview":      execPreview,
+	"run":          execLambdaRun,
+	"copy-value":   execSSMCopyValue,
+	"update-value": execSSMUpdateValue,
+}
+
+// ActionsFor returns the ordered action list for a resource type. It looks
+// up the provider via services.Get, reads provider.Actions() for the ordered
+// ActionDef list, and maps each ActionDef to an Action by looking up the
+// Execute function in actionExecuteRegistry. This eliminates the type-switch
+// that previously lived here — adding actions for a new service only requires
+// changes in the provider's Actions() method and the registry map above.
 func ActionsFor(t core.ResourceType) []Action {
-	switch t {
-	case core.RTypeBucket:
-		return []Action{
-			{Label: "Open in Browser", Execute: execOpenInBrowser},
-			{Label: "Copy URI", Execute: execCopyURI},
-			{Label: "Copy ARN", Execute: execCopyARN},
-		}
-	case core.RTypeFolder:
-		return []Action{
-			{Label: "Open in Browser", Execute: execOpenInBrowser},
-			{Label: "Copy URI", Execute: execCopyURI},
-			{Label: "Copy ARN", Execute: execCopyARN},
-		}
-	case core.RTypeObject:
-		return []Action{
-			{Label: "Open in Browser", Execute: execOpenInBrowser},
-			{Label: "Copy URI", Execute: execCopyURI},
-			{Label: "Copy ARN", Execute: execCopyARN},
-			{Label: "Download", Execute: execDownload},
-			{Label: "Preview", Execute: execPreview},
-		}
-	case core.RTypeEcsService:
-		return []Action{
-			{Label: "Open in Browser", Execute: execOpenInBrowser},
-			{Label: "Force new Deployment", Execute: execForceDeploy},
-			{Label: "Tail Logs", Execute: execTailLogs},
-		}
-	case core.RTypeEcsTaskDefFamily:
-		return []Action{
-			{Label: "Open in Browser", Execute: execOpenInBrowser},
-			{Label: "Copy ARN", Execute: execCopyARN},
-			{Label: "Tail Logs", Execute: execTailLogs},
-		}
-	default:
+	p, ok := services.Get(t)
+	if !ok {
 		return nil
 	}
+	defs := p.Actions()
+	if len(defs) == 0 {
+		return nil
+	}
+	actions := make([]Action, len(defs))
+	for i, def := range defs {
+		actions[i] = Action{
+			Label:   def.Label,
+			Execute: actionExecuteRegistry[def.ID], // nil if ID not registered
+		}
+	}
+	return actions
 }
