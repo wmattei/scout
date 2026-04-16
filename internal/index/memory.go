@@ -70,7 +70,7 @@ func isTopLevelType(t core.ResourceType) bool {
 // The search layer iterates All() for fuzzy matching; this is intentionally
 // simple (a linear scan over a slice) and fast enough for tens of thousands
 // of resources. If that stops being true we'll swap in a smarter index —
-// but YAGNI for Phase 1.
+// but YAGNI for now.
 type Memory struct {
 	mu sync.RWMutex
 	// byTypeKey is the canonical map; All() derives a snapshot slice.
@@ -157,9 +157,8 @@ func (m *Memory) Len() int {
 }
 
 // All returns a snapshot slice of all top-level resources the TUI should
-// search against. Top-level in Phase 1 means: buckets, ecs services, and
-// ecs task def families. Folders and objects are excluded here — they are
-// searched in the scoped mode, which is Phase 2 territory.
+// search against. Top-level types are set via SetTopLevelTypes at startup;
+// folders and objects are excluded here and searched only in scoped mode.
 //
 // The slice is freshly allocated on every call so callers may sort, filter,
 // or otherwise mutate it without locking.

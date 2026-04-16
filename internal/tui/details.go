@@ -45,8 +45,8 @@ func renderDetails(m Model, width int) string {
 	// AND lazy resolution is in-flight, render a centered
 	// "resolving details…" placeholder instead of an empty gap.
 	// When the provider returns nil AND no resolution is happening,
-	// fall back to the legacy single "Log" row (for the types that
-	// don't implement DetailRows yet).
+	// types without DetailRows show only the Log row if their provider
+	// has one.
 	if p, ok := services.Get(r.Type); ok {
 		lazy := m.lazyDetailsFor(r)
 		rows := p.DetailRows(r, lazy)
@@ -70,8 +70,8 @@ func renderDetails(m Model, width int) string {
 			b.WriteString(styleRowDim.Render("resolving details…"))
 			b.WriteString("\n")
 		default:
-			// Legacy fallback: types that haven't implemented
-			// DetailRows yet still get their Log row if available.
+			// No extra detail rows for this type.
+			// Still show the Log row if the provider has one.
 			if group := p.LogGroup(r, lazy); group != "" {
 				writeField(&b, "Log", group)
 			}

@@ -274,7 +274,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Close the old DB handle — we're done with it. Any still-
 		// running refreshTopLevelCmd from the old context will fail
 		// its next UpsertResources silently, which is acceptable for
-		// v0 (see the Phase 4 plan's architecture note).
+		// now.
 		if m.db != nil {
 			_ = m.db.Close()
 		}
@@ -684,16 +684,14 @@ func spinTickCmd() tea.Cmd {
 }
 
 // runAction dispatches the selected action via its Execute closure. If
-// Execute is nil (not yet implemented), it falls back to the original
-// stub toast so Phase 3 can migrate actions one at a time without
-// breaking the UI.
+// Execute is nil (not yet implemented), it surfaces a toast to the user.
 func (m Model) runAction(actions []Action, idx int) (tea.Model, tea.Cmd) {
 	if idx < 0 || idx >= len(actions) {
 		return m, nil
 	}
 	a := actions[idx]
 	if a.Execute == nil {
-		m.toast = newToast("not yet implemented — Phase 3", 3*time.Second)
+		m.toast = newToast("not yet implemented", 3*time.Second)
 		return m, nil
 	}
 	return a.Execute(m)

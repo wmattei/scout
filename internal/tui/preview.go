@@ -35,8 +35,7 @@ func previewAllowed(key string) bool {
 // parent directory is created if needed.
 //
 // The file is NOT cleaned up by the program — we rely on the OS temp
-// dir lifecycle (macOS wipes on reboot, /tmp varies on Linux). See the
-// Phase 3 plan for the explicit trade-off.
+// dir lifecycle (macOS wipes on reboot, /tmp varies on Linux).
 func previewTempPath(key string) (string, error) {
 	dir := filepath.Join(os.TempDir(), "scout")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -56,8 +55,7 @@ func previewTempPath(key string) (string, error) {
 
 // openPreview hands a file path off to the OS default handler for its
 // extension. macOS uses `open`, Linux uses `xdg-open`; Windows is
-// unsupported in v0. See the Phase 3 plan's "Cross-OS limitations"
-// section.
+// unsupported — see the Cross-OS limitations in CLAUDE.md.
 func openPreview(path string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

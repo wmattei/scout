@@ -16,8 +16,8 @@ import (
 	"github.com/wmattei/scout/internal/debuglog"
 )
 
-// Context is the resolved AWS environment for the current session. Phase 1
-// creates exactly one on startup; Phase 4's profile switcher will rebuild it.
+// Context is the resolved AWS environment for the current session. One is
+// created on startup; the profile switcher rebuilds the Context on each switch.
 type Context struct {
 	Profile string
 	Region  string
@@ -30,8 +30,8 @@ type Context struct {
 //	profile: AWS_PROFILE > AWS_DEFAULT_PROFILE > "default"
 //	region:  AWS_REGION  > AWS_DEFAULT_REGION  > profile's configured region
 //
-// If none of the above yield a region, Resolve returns an error — Phase 1
-// surfaces this to stderr and exits; Phase 4 adds a modal fallback picker.
+// If none of the above yield a region, Resolve returns an error and the
+// caller exits. A modal fallback picker is planned for when no region resolves.
 func Resolve(ctx context.Context) (*Context, error) {
 	profile := firstNonEmpty(os.Getenv("AWS_PROFILE"), os.Getenv("AWS_DEFAULT_PROFILE"), "default")
 
@@ -66,7 +66,7 @@ func Resolve(ctx context.Context) (*Context, error) {
 }
 
 // CallerIdentity fetches the account ID via sts:GetCallerIdentity. Called at
-// most once per session in Phase 1 to render the status bar; cached by the
+// most once per session to render the status bar; result is cached by the
 // caller.
 func (c *Context) CallerIdentity(ctx context.Context) (string, error) {
 	out, err := sts.NewFromConfig(c.Cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})

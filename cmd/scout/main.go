@@ -35,11 +35,10 @@ import (
 	_ "github.com/wmattei/scout/internal/awsctx/ssm"
 )
 
-const Version = "0.0.0-phase4"
+const Version = "0.0.0"
 
 func main() {
-	// Subcommand dispatch. Anything unrecognized falls through to the
-	// TUI so legacy invocations don't break.
+	// Subcommand dispatch.
 	if len(os.Args) >= 2 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
 		printHelp()
 		return
@@ -59,6 +58,11 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	if len(os.Args) >= 2 {
+		fmt.Fprintf(os.Stderr, "scout: unknown command %q\n", os.Args[1])
+		printHelp()
+		os.Exit(1)
 	}
 
 	closeLog := debuglog.Init()

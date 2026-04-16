@@ -7,7 +7,7 @@
 //
 // The file is TRUNCATED at the start of each program run so a single
 // log file represents a single session — easier to share when
-// reproducing a bug. Rotating logs is out of scope for v0.
+// reproducing a bug. Log rotation is not implemented.
 package debuglog
 
 import (

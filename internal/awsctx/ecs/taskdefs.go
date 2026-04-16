@@ -14,7 +14,7 @@ import (
 
 // ListTaskDefFamilies returns one Resource per active task-definition family.
 // The family name is the Key and DisplayName; revision is resolved lazily
-// via DescribeTaskDefinition when actions need it (Phase 3).
+// via DescribeTaskDefinition when actions need it.
 //
 // Families are listed with status=ACTIVE so retired families don't clutter
 // the results. opts.Limit caps the total returned (the per-page MaxResults

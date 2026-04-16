@@ -31,8 +31,8 @@ const (
 )
 
 
-// Model is the bubbletea model for the search + details views. Phase 2
-// introduces a Mode split: modeSearch runs the input bar + result list,
+// Model is the bubbletea model for the search + details views.
+// Mode split: modeSearch runs the input bar + result list,
 // modeDetails runs the Details panel + Actions list for a chosen row.
 type Model struct {
 	// Injected dependencies.
@@ -88,9 +88,6 @@ type Model struct {
 	// the user is typing into the filter prompt (/ key).
 	tailFilter        string
 	tailFilterEditing bool
-
-	// Unused in Phase 2; reserved for Phase 4's refresh progress tracking.
-	lastTopLevel []core.Resource
 
 	// Switcher overlay state and the previous mode to return to on
 	// Esc. `switcher.Visible` mirrors `mode == modeSwitcher`; keeping

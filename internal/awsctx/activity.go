@@ -14,8 +14,8 @@ import (
 // which op name to show. Callers attach it to their aws.Config via Attach().
 //
 // A single instance is sufficient because the binary runs one bubbletea
-// program at a time. Phase 4's profile switcher rebuilds the Context but
-// shares the same Activity.
+// program at a time. The profile switcher rebuilds the Context but shares
+// the same Activity.
 type Activity struct {
 	inflight int64 // atomic
 

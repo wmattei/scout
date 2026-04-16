@@ -1,8 +1,7 @@
 package tui
 
 // Mode represents which top-level screen the bubbletea program is
-// currently showing. Phase 2 introduces the first mode split: search
-// versus details. Phase 4 will add the profile/region switcher overlay.
+// currently showing.
 type Mode int
 
 const (
@@ -11,8 +10,7 @@ const (
 	modeSearch Mode = iota
 
 	// modeDetails shows the Details panel + Actions list for a selected
-	// resource. All actions are stubbed in Phase 2 and surface a toast
-	// on activation; Phase 3 implements them for real.
+	// resource. All actions have real implementations.
 	modeDetails
 
 	// modeTailLogs shows the full-screen streaming log viewport backed

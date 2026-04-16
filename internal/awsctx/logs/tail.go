@@ -83,7 +83,7 @@ func StartLiveTail(parentCtx context.Context, ac *awsctx.Context, logGroupName, 
 					}
 				}
 			case *cwltypes.StartLiveTailResponseStreamMemberSessionStart:
-				// Session metadata; ignore for v0.
+				// Session metadata; nothing to extract.
 			}
 		}
 		if err := stream.Err(); err != nil && ctx.Err() == nil {

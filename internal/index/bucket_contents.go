@@ -14,7 +14,7 @@ import (
 // The schema stores full keys (no trimming). `is_folder` is derived from
 // resource type. Size/mtime are pulled from Meta when present.
 //
-// This is the opportunistic caching sink for Phase 2 scoped search: every
+// This is the opportunistic caching sink for scoped S3 search: every
 // result that surfaces in the UI is upserted here so the next visit hits
 // the cache.
 func (d *DB) UpsertBucketContents(ctx context.Context, bucket string, rs []core.Resource) error {

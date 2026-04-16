@@ -15,8 +15,7 @@ import (
 //
 // An Execute may be nil for actions that are not yet implemented — the
 // dispatcher will fall back to the "not yet implemented" toast in that
-// case. This is the migration path: Phase 3 tasks fill in each Execute
-// one at a time, and nothing breaks along the way.
+// case.
 type Action struct {
 	Label   string
 	Execute ActionExecute

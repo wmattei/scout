@@ -8,8 +8,8 @@ import (
 
 // openInBrowser hands off a URL to the OS's default browser launcher.
 // Returns an error describing the problem so the caller can surface it
-// via a toast. Windows is intentionally unsupported in v0 — see the
-// "Cross-OS limitations" section of the Phase 3 plan.
+// via a toast. Windows is intentionally unsupported — see the
+// Cross-OS limitations in CLAUDE.md.
 func openInBrowser(u string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

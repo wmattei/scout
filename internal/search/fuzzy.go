@@ -1,9 +1,9 @@
 // Package search houses the fuzzy and prefix match engines used by the TUI
 // to turn a query string into a ranked, highlight-annotated result list.
 //
-// Phase 1 only uses the fuzzy engine (top-level mode). Phase 2 adds the
-// prefix engine for scoped mode. They share the Result type so the result
-// list renderer doesn't need to know which engine produced a row.
+// The fuzzy engine covers top-level mode; the prefix engine covers scoped
+// mode. They share the Result type so the result list renderer doesn't
+// need to know which engine produced a row.
 package search
 
 import (
