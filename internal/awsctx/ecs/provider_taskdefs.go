@@ -2,6 +2,7 @@ package ecs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -77,18 +78,31 @@ func (ecsTaskDefProvider) ListAll(ctx context.Context, ac *awsctx.Context, opts 
 }
 
 // ResolveDetails fires DescribeTaskDefinition for the family and
-// returns the resolved revision ARN + log group list. The keys
-// match what ConsoleURL and LogGroup read.
+// stores the full set of fields the DetailRows renderer needs.
 func (ecsTaskDefProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context, r core.Resource) (map[string]string, error) {
 	d, err := DescribeFamily(ctx, ac, r.Key)
 	if err != nil || d == nil {
 		return nil, err
 	}
 	out := map[string]string{
-		"familyArn": d.ARN,
+		"familyArn":    d.ARN,
+		"revision":     fmt.Sprintf("%d", d.Revision),
+		"cpu":          d.CPU,
+		"memory":       d.Memory,
+		"networkMode":  d.NetworkMode,
+		"taskRole":     d.TaskRoleArn,
+		"execRole":     d.ExecutionRoleArn,
 	}
 	if len(d.LogGroups) > 0 {
 		out["logGroup"] = d.LogGroups[0]
+	}
+	if len(d.RequiresCompatibilities) > 0 {
+		out["compatibilities"] = strings.Join(d.RequiresCompatibilities, ", ")
+	}
+	if len(d.ContainerImages) > 0 {
+		if b, err := json.Marshal(d.ContainerImages); err == nil {
+			out["containers"] = string(b)
+		}
 	}
 	return out, nil
 }
@@ -99,3 +113,95 @@ func (ecsTaskDefProvider) LogGroup(_ core.Resource, lazy map[string]string) stri
 	}
 	return lazy["logGroup"]
 }
+
+// DetailRows renders the task-definition details panel: revision,
+// CPU/memory, network mode, compatibilities, containers + images,
+// IAM roles, and log groups.
+func (ecsTaskDefProvider) DetailRows(r core.Resource, lazy map[string]string) []services.DetailRow {
+	if lazy == nil || lazy["revision"] == "" {
+		return nil
+	}
+
+	rows := []services.DetailRow{
+		{Label: "Revision", Value: lazy["revision"]},
+	}
+
+	// CPU / Memory on one row.
+	if cpu := lazy["cpu"]; cpu != "" {
+		mem := lazy["memory"]
+		val := cpu + " CPU"
+		if mem != "" {
+			val = val + "  ·  " + mem + " MiB"
+		}
+		rows = append(rows, services.DetailRow{Label: "Resources", Value: val})
+	}
+
+	if nm := lazy["networkMode"]; nm != "" {
+		rows = append(rows, services.DetailRow{Label: "Network", Value: nm})
+	}
+	if c := lazy["compatibilities"]; c != "" {
+		rows = append(rows, services.DetailRow{Label: "Platform", Value: c})
+	}
+
+	// IAM roles — show just the role name (last segment of the ARN)
+	// for readability, or the full ARN if it doesn't parse.
+	if role := lazy["taskRole"]; role != "" {
+		rows = append(rows, services.DetailRow{Label: "Task role", Value: shortRole(role)})
+	}
+	if role := lazy["execRole"]; role != "" {
+		rows = append(rows, services.DetailRow{Label: "Exec role", Value: shortRole(role)})
+	}
+
+	// Log group.
+	if lg := lazy["logGroup"]; lg != "" {
+		rows = append(rows, services.DetailRow{Label: "Log", Value: lg})
+	}
+
+	// Containers + images as a sub-section.
+	if containers := decodeContainers(lazy["containers"]); len(containers) > 0 {
+		rows = append(rows, services.DetailRow{}) // spacer
+		if len(containers) <= 3 {
+			rows = append(rows, services.DetailRow{Value: styleHeader.Render("Containers")})
+			for _, c := range containers {
+				rows = append(rows, services.DetailRow{Label: "", Value: styleDim.Render(c)})
+			}
+		} else {
+			rows = append(rows, services.DetailRow{
+				Value: styleHeader.Render(fmt.Sprintf("Containers (%d)", len(containers))),
+			})
+			for _, c := range containers[:3] {
+				rows = append(rows, services.DetailRow{Label: "", Value: styleDim.Render(c)})
+			}
+			rows = append(rows, services.DetailRow{
+				Label: "",
+				Value: styleDim.Render(fmt.Sprintf("… and %d more", len(containers)-3)),
+			})
+		}
+	}
+
+	return rows
+}
+
+// shortRole extracts the role name from an IAM role ARN.
+// "arn:aws:iam::123:role/MyRole" → "MyRole".
+func shortRole(arn string) string {
+	if i := strings.LastIndexByte(arn, '/'); i >= 0 {
+		return arn[i+1:]
+	}
+	return arn
+}
+
+// decodeContainers unmarshals a JSON []string of "name=image" entries.
+func decodeContainers(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+// styleHeader and styleDim are declared in provider_services.go
+// (same package) — no redeclaration needed here.
