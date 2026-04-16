@@ -691,6 +691,11 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeDetails
 		m.toast = newToast("stopped tailing", 2*time.Second)
 		return m, nil
+	case "ctrl+down":
+		// Jump to the bottom and re-engage auto-follow so new events
+		// scroll the viewport automatically again.
+		m.tailViewport.GotoBottom()
+		return m, nil
 	}
 	// Forward scroll keys to the viewport.
 	var cmd tea.Cmd

@@ -7,7 +7,7 @@ import "fmt"
 // and a footer-help row.
 func renderTailLogs(m Model, height int) string {
 	header := styleDetailsHeader.Render("Tail Logs — " + m.tailGroup)
-	help := styleRowDim.Render("Esc back    Ctrl+C stop    ↑/↓ scroll")
+	help := styleRowDim.Render("Esc back    Ctrl+C stop    ↑/↓ scroll    Ctrl+↓ follow")
 
 	// The viewport dimensions are set in the WindowSizeMsg handler
 	// inside update.go so that scroll math during Update uses the
