@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -108,6 +109,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.toast = newToast(msg.toast, 4*time.Second)
 		}
+		return m, nil
+
+	case msgEditorClosed:
+		if msg.Err != nil {
+			m.toast = newErrorToast("editor: " + msg.Err.Error())
+			m.pendingEditorAction = editorActionNone
+			return m, nil
+		}
+		content, err := os.ReadFile(m.pendingEditorPath)
+		_ = os.Remove(m.pendingEditorPath) // clean up regardless
+		if err != nil {
+			m.toast = newErrorToast("read editor output: " + err.Error())
+			m.pendingEditorAction = editorActionNone
+			return m, nil
+		}
+		switch m.pendingEditorAction {
+		case editorActionLambdaInvoke:
+			m.inFlight = true
+			m.inFlightLabel = "invoking…"
+			m.pendingEditorAction = editorActionNone
+			return m, lambdaInvokeCmd(m.awsCtx, m.pendingEditorResource, content)
+		case editorActionSSMUpdate:
+			m.inFlight = true
+			m.inFlightLabel = "updating…"
+			m.pendingEditorAction = editorActionNone
+			return m, ssmUpdateCmd(m.awsCtx, m.pendingEditorResource, content)
+		}
+		m.pendingEditorAction = editorActionNone
 		return m, nil
 
 	case msgLazyDetailsResolved:
