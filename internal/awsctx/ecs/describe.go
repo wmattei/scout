@@ -131,6 +131,56 @@ func str(p *string) string {
 	return *p
 }
 
+// CountRunningTasks walks every cluster and counts tasks that belong
+// to the given task-definition family and are in the RUNNING desired
+// status. Returns the total count across all clusters. Used by the
+// task-def Details page to show a live "N running" row.
+func CountRunningTasks(ctx context.Context, ac *awsctx.Context, family string) (int, error) {
+	client := awsecs.NewFromConfig(ac.Cfg)
+
+	// Step 1: list all clusters.
+	var clusterArns []string
+	var clusterNext *string
+	for {
+		out, err := client.ListClusters(ctx, &awsecs.ListClustersInput{NextToken: clusterNext})
+		if err != nil {
+			return 0, fmt.Errorf("ecs:ListClusters: %w", err)
+		}
+		clusterArns = append(clusterArns, out.ClusterArns...)
+		if out.NextToken == nil {
+			break
+		}
+		clusterNext = out.NextToken
+	}
+
+	// Step 2: per-cluster ListTasks filtered by family + RUNNING.
+	total := 0
+	for _, cluster := range clusterArns {
+		var taskNext *string
+		for {
+			out, err := client.ListTasks(ctx, &awsecs.ListTasksInput{
+				Cluster:       aws.String(cluster),
+				Family:        aws.String(family),
+				DesiredStatus: "RUNNING",
+				NextToken:     taskNext,
+			})
+			if err != nil {
+				// Best-effort — some clusters may reject (e.g. if
+				// the caller doesn't have ecs:ListTasks permission
+				// in that cluster). Skip silently so the rest still
+				// resolve.
+				break
+			}
+			total += len(out.TaskArns)
+			if out.NextToken == nil {
+				break
+			}
+			taskNext = out.NextToken
+		}
+	}
+	return total, nil
+}
+
 // TaskDefDetails holds the fields the TUI renders in the Details
 // panel when a task definition family is selected. Assembled by
 // DescribeFamily from a single DescribeTaskDefinition call.
