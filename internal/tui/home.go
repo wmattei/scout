@@ -133,22 +133,33 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		}
 	}
 
-	// Render Favorites section.
+	// Render Favorites section. When the global cursor is in the
+	// Recents section (m.selected >= favoritesLen), we pass -1 as
+	// the selection so renderResultsRange does not scroll the fav
+	// slice — the user would otherwise lose sight of earlier
+	// favorites as the cursor moves through recents.
 	if headerFav != "" && favBudget > 0 {
 		writeLine(headerFav)
 		favRows := sections.rows[:sections.favoritesLen]
-		writeLine(renderResultsRange(favRows, m.selected, 0, favBudget, width, m.prefsState))
-		lines += favBudget - 1 // renderResultsRange already emitted favBudget lines joined by \n; writeLine added 1 more
+		favSel := m.selected
+		if favSel >= sections.favoritesLen {
+			favSel = -1
+		}
+		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState))
+		lines += favBudget - 1 // renderResultsRange emitted favBudget lines joined by \n; writeLine added 1 more
 	}
 
-	// Render Recents section.
+	// Render Recents section. Selection index within the recents
+	// slice is m.selected - favoritesLen; if the cursor is still in
+	// the favorites section, we pass -1 so no recent row is
+	// highlighted.
 	if headerRec != "" && recBudget > 0 {
 		writeLine(headerRec)
 		recRows := sections.rows[sections.favoritesLen:]
-		// Selection index within the recents slice is m.selected -
-		// favoritesLen; if outside range, pass -1 so no row is
-		// highlighted.
 		recSel := m.selected - sections.favoritesLen
+		if recSel < 0 {
+			recSel = -1
+		}
 		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState))
 		lines += recBudget - 1
 	}
