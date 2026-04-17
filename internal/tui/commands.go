@@ -11,6 +11,7 @@ import (
 	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 	"github.com/wmattei/scout/internal/services"
 )
@@ -220,10 +221,12 @@ func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
 // loaded cache. On failure, the old state is preserved and an error
 // toast is raised.
 type msgSwitcherCommitted struct {
-	ctx    *awsctx.Context
-	db     *index.DB
-	memory *index.Memory
-	err    error
+	ctx        *awsctx.Context
+	db         *index.DB
+	memory     *index.Memory
+	prefs      *prefs.DB
+	prefsState *prefs.State
+	err        error
 }
 
 // commitSwitcherCmd runs the heavy lifting of a profile/region swap
@@ -252,10 +255,18 @@ func commitSwitcherCmd(profile, region string) tea.Cmd {
 		}
 		mem := index.NewMemory()
 		mem.Load(cached)
+
+		newPrefs, newPrefsState, err := prefs.Open(newCtx.Profile, newCtx.Region)
+		if err != nil {
+			_ = newDB.Close()
+			return msgSwitcherCommitted{err: err}
+		}
 		return msgSwitcherCommitted{
-			ctx:    newCtx,
-			db:     newDB,
-			memory: mem,
+			ctx:        newCtx,
+			db:         newDB,
+			memory:     mem,
+			prefs:      newPrefs,
+			prefsState: newPrefsState,
 		}
 	}
 }

@@ -275,16 +275,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toast = newErrorToast("switch failed: " + msg.err.Error())
 			return m, nil
 		}
-		// Close the old DB handle — we're done with it. Any still-
-		// running refreshTopLevelCmd from the old context will fail
-		// its next UpsertResources silently, which is acceptable for
-		// now.
+		// Close the old DB handles — we're done with them.
 		if m.db != nil {
 			_ = m.db.Close()
+		}
+		if m.prefs != nil {
+			_ = m.prefs.Close()
 		}
 		m.awsCtx = msg.ctx
 		m.db = msg.db
 		m.memory = msg.memory
+		m.prefs = msg.prefs
+		m.prefsState = msg.prefsState
 		// The new context needs its own activity middleware so SDK
 		// call instrumentation continues to work.
 		m.activity.Attach(&m.awsCtx.Cfg)
