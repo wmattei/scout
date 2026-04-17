@@ -133,31 +133,33 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		}
 	}
 
-	// Render Favorites section. When the global cursor is in the
-	// Recents section (m.selected >= favoritesLen), we pass -1 as
-	// the selection so renderResultsRange does not scroll the fav
-	// slice — the user would otherwise lose sight of earlier
-	// favorites as the cursor moves through recents.
+	// Render Favorites section. We pass the first `favBudget` rows
+	// only and anchor the viewport at index 0 unless the cursor is
+	// in the visible favorites window — otherwise renderResults
+	// would scroll the slice to keep the cursor visible, which
+	// pushes earlier favorites (including the newest one at index
+	// 0) off-screen. The cursor can still live at a position beyond
+	// the visible window; it just won't be highlighted there.
 	if headerFav != "" && favBudget > 0 {
 		writeLine(headerFav)
-		favRows := sections.rows[:sections.favoritesLen]
+		favRows := sections.rows[:favBudget]
 		favSel := m.selected
-		if favSel >= sections.favoritesLen {
+		if favSel < 0 || favSel >= favBudget {
 			favSel = -1
 		}
 		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState))
 		lines += favBudget - 1 // renderResultsRange emitted favBudget lines joined by \n; writeLine added 1 more
 	}
 
-	// Render Recents section. Selection index within the recents
-	// slice is m.selected - favoritesLen; if the cursor is still in
-	// the favorites section, we pass -1 so no recent row is
-	// highlighted.
+	// Render Recents section. Same anchoring rule as Favorites:
+	// slice to exactly `recBudget` rows and pass -1 when the cursor
+	// is outside this window so no viewport scroll occurs.
 	if headerRec != "" && recBudget > 0 {
 		writeLine(headerRec)
-		recRows := sections.rows[sections.favoritesLen:]
+		recStart := sections.favoritesLen
+		recRows := sections.rows[recStart : recStart+recBudget]
 		recSel := m.selected - sections.favoritesLen
-		if recSel < 0 {
+		if recSel < 0 || recSel >= recBudget {
 			recSel = -1
 		}
 		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState))
