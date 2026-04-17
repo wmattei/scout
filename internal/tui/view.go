@@ -84,7 +84,7 @@ func (m Model) renderSearchBody(height int) string {
 	case len(visible) == 0:
 		emptyMsg = fmt.Sprintf("no matches for %q", inputValue)
 	}
-	return renderResults(visible, m.selected, m.width, height, emptyMsg)
+	return renderResults(visible, m.selected, m.width, height, emptyMsg, m.prefsState)
 }
 
 // padBlock appends blank lines to `body` until it has exactly `height`
