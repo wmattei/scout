@@ -453,6 +453,10 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		return m.runAction(actions, m.actionSel)
+	case "f":
+		_, toast := m.toggleFavoriteForResource(m.detailsResource)
+		m.toast = toast
+		return m, nil
 	}
 	// Number hotkeys 1..9 for direct selection + execution.
 	if len(msg.Runes) == 1 {
