@@ -24,6 +24,7 @@ import (
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/debuglog"
 	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/services"
 	"github.com/wmattei/scout/internal/tui"
 
@@ -129,13 +130,19 @@ func runTUI() (err error) {
 	}
 	memory.Load(cached)
 
+	prefsDB, prefsState, err := prefs.Open(awsCtx.Profile, awsCtx.Region)
+	if err != nil {
+		return fmt.Errorf("opening prefs: %w", err)
+	}
+	defer prefsDB.Close()
+
 	debuglog.Logger().Info("starting tui",
 		"profile", awsCtx.Profile,
 		"region", awsCtx.Region,
 		"version", Version,
 	)
 
-	model := tui.NewModel(memory, db, awsCtx, activity)
+	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState)
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, runErr := program.Run(); runErr != nil {
 		return fmt.Errorf("tui: %w", runErr)

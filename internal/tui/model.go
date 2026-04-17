@@ -9,6 +9,7 @@ import (
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 )
 
@@ -36,10 +37,12 @@ const (
 // modeDetails runs the Details panel + Actions list for a chosen row.
 type Model struct {
 	// Injected dependencies.
-	memory   *index.Memory
-	db       *index.DB
-	awsCtx   *awsctx.Context
-	activity *awsctx.Activity
+	memory     *index.Memory
+	db         *index.DB
+	awsCtx     *awsctx.Context
+	activity   *awsctx.Activity
+	prefs      *prefs.DB
+	prefsState *prefs.State
 
 	// Shared UI state.
 	input    textinput.Model
@@ -114,7 +117,7 @@ type Model struct {
 }
 
 // NewModel constructs the initial model for the bubbletea program.
-func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activity *awsctx.Activity) Model {
+func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activity *awsctx.Activity, prefsDB *prefs.DB, prefsState *prefs.State) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search…"
 	ti.Prompt = "> "
@@ -126,6 +129,8 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		db:                  db,
 		awsCtx:              awsCtx,
 		activity:            activity,
+		prefs:               prefsDB,
+		prefsState:          prefsState,
 		input:               ti,
 		width:               80,
 		height:              24,
