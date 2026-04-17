@@ -226,7 +226,11 @@ type msgSwitcherCommitted struct {
 	memory     *index.Memory
 	prefs      *prefs.DB
 	prefsState *prefs.State
-	err        error
+	// err means the entire switch failed (e.g. cache DB open error).
+	// prefsErr means only the prefs DB failed to open; the switch
+	// succeeded and the TUI will run with nil prefs this session.
+	err      error
+	prefsErr error
 }
 
 // commitSwitcherCmd runs the heavy lifting of a profile/region swap
@@ -256,17 +260,18 @@ func commitSwitcherCmd(profile, region string) tea.Cmd {
 		mem := index.NewMemory()
 		mem.Load(cached)
 
-		newPrefs, newPrefsState, err := prefs.Open(newCtx.Profile, newCtx.Region)
-		if err != nil {
-			_ = newDB.Close()
-			return msgSwitcherCommitted{err: err}
-		}
+		// prefs.Open failure is non-fatal: the context switch should
+		// still complete so the user reaches the new profile/region.
+		// The TUI handles nil prefs everywhere and will just disable
+		// favorite/recent features for this session.
+		newPrefs, newPrefsState, prefsErr := prefs.Open(newCtx.Profile, newCtx.Region)
 		return msgSwitcherCommitted{
 			ctx:        newCtx,
 			db:         newDB,
 			memory:     mem,
 			prefs:      newPrefs,
 			prefsState: newPrefsState,
+			prefsErr:   prefsErr,
 		}
 	}
 }

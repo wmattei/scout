@@ -303,7 +303,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Close the switcher overlay.
 		m.switcher.Hide()
 		m.mode = modeSearch
-		m.toast = newToast(fmt.Sprintf("context: %s / %s", m.awsCtx.Profile, m.awsCtx.Region), 3*time.Second)
+		if msg.prefsErr != nil {
+			// Prefs open failed for the new context — the switch
+			// still succeeded but favorites/recents are disabled
+			// this session. Error toast replaces the usual
+			// context-change toast so the user sees the warning.
+			m.toast = newErrorToast("prefs unavailable for " + m.awsCtx.Profile + "/" + m.awsCtx.Region + ": " + msg.prefsErr.Error())
+		} else {
+			m.toast = newToast(fmt.Sprintf("context: %s / %s", m.awsCtx.Profile, m.awsCtx.Region), 3*time.Second)
+		}
 		// Re-resolve caller identity for the new profile. We do NOT
 		// fire a top-level refresh — the user is responsible for
 		// preloading the new context (or letting the service-scope
