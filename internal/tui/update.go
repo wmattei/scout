@@ -86,9 +86,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// instead of the unfiltered in-memory index.
 		scope := search.ParseScope(m.input.Value())
 		if scope.HasService {
-			m.results = search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults)
+			m.results = partitionByFavorites(
+				search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults),
+				m.prefsState,
+			)
 		} else {
-			m.results = computeResults(m.input.Value(), m.memory)
+			m.results = partitionByFavorites(computeResults(m.input.Value(), m.memory), m.prefsState)
 		}
 		m.clampSelected()
 		if len(msg.errors) > 0 {
@@ -512,7 +515,10 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	// keystrokes under the same alias just re-filter the in-memory
 	// index with no AWS call.
 	if scope.HasService {
-		m.results = search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults)
+		m.results = partitionByFavorites(
+			search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults),
+			m.prefsState,
+		)
 		m.scopedResults = nil
 		m.scopedQuery = ""
 		m.clampSelected()
@@ -528,7 +534,7 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	}
 
 	if scope.IsTopLevel() {
-		m.results = computeResults(m.input.Value(), m.memory)
+		m.results = partitionByFavorites(computeResults(m.input.Value(), m.memory), m.prefsState)
 		m.scopedResults = nil
 		m.scopedQuery = ""
 		m.clampSelected()
