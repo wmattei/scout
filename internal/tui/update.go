@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/search"
 	"github.com/wmattei/scout/internal/services"
@@ -391,6 +392,17 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.CursorEnd()
 		return m.recomputeResults(nil)
 	case "ctrl+r", "esc":
+		return m, nil
+	case "f":
+		visible := m.visibleSearchResults()
+		if len(visible) == 0 {
+			return m, nil
+		}
+		if m.selected < 0 || m.selected >= len(visible) {
+			return m, nil
+		}
+		_, toast := m.toggleFavoriteForResource(visible[m.selected].Resource)
+		m.toast = toast
 		return m, nil
 	}
 
@@ -817,6 +829,29 @@ func summarizeErrors(errs []string) string {
 		return "refresh failed: " + errs[0]
 	}
 	return fmt.Sprintf("%d subtasks failed: %s", len(errs), errs[0])
+}
+
+// toggleFavoriteForResource flips favorite state on the given resource,
+// persists the change via the prefs DB, and returns the appropriate
+// success/error toast. Returns true when the resource was favorited
+// (i.e. not previously a favorite), false when it was unfavorited.
+//
+// Used by the `f` keybinding handlers in both updateSearch and
+// updateDetails so the toast wording stays consistent.
+func (m *Model) toggleFavoriteForResource(r core.Resource) (favorited bool, toast Toast) {
+	if m.prefs == nil || m.prefsState == nil {
+		return false, newErrorToast("favorites unavailable")
+	}
+	if m.prefsState.IsFavorite(r.Type, r.Key) {
+		if err := m.prefs.UnsetFavorite(m.prefsState, r.Type, r.Key); err != nil {
+			return false, newErrorToast("unfavorite failed: " + err.Error())
+		}
+		return false, newSuccessToast("unfavorited " + r.DisplayName)
+	}
+	if err := m.prefs.SetFavorite(m.prefsState, r); err != nil {
+		return false, newErrorToast("favorite failed: " + err.Error())
+	}
+	return true, newSuccessToast("★ favorited " + r.DisplayName)
 }
 
 // updateSwitcher handles key events while the profile/region overlay is
