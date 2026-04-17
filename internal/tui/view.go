@@ -23,7 +23,25 @@ func (m Model) View() string {
 
 	status := renderStatus(m.width, m.awsCtx.Profile, m.awsCtx.Region, m.account, m.activity.Snapshot(), m.spinTick)
 
+	// Favorite-toggle hint. Rendered on its own line immediately
+	// above the bottom divider when a resource is in focus. The tail
+	// and switcher modes suppress it because they have their own
+	// footer content / overlays.
+	hintText := ""
+	if m.mode == modeSearch || m.mode == modeDetails {
+		hintText = favoriteHintFor(m)
+	}
+	hintLine := ""
+	if hintText != "" {
+		hintLine = padRight(styleRowDim.Render(" "+hintText), m.width)
+	}
+
+	// Base body height budget: total − input − 2 dividers − status.
+	// When the hint is visible we borrow one more line from body.
 	bodyHeight := m.height - 4
+	if hintLine != "" {
+		bodyHeight--
+	}
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
@@ -41,26 +59,20 @@ func (m Model) View() string {
 		body = m.renderSearchBody(bodyHeight)
 	}
 
-	// Optional toast overlay replaces the status line with a centered box
-	// while the toast is active, keeping total height the same.
+	// Compose the frame with or without the optional hint line.
+	lines := []string{inputLine, divider, body}
+	if hintLine != "" {
+		lines = append(lines, hintLine)
+	}
+	lines = append(lines, divider)
+
 	if m.toast.isActive() {
-		toastLine := renderToast(m.toast, m.width)
-		return strings.Join([]string{
-			inputLine,
-			divider,
-			body,
-			divider,
-			toastLine,
-		}, "\n")
+		lines = append(lines, renderToast(m.toast, m.width))
+	} else {
+		lines = append(lines, status)
 	}
 
-	return strings.Join([]string{
-		inputLine,
-		divider,
-		body,
-		divider,
-		status,
-	}, "\n")
+	return strings.Join(lines, "\n")
 }
 
 // renderSearchBody produces the middle zone for modeSearch — either the
