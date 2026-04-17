@@ -27,6 +27,7 @@ internal/
     ssm/                  SSM adapters + provider (parameters)
     logs/                 CloudWatch Logs — StartLiveTail, GetRecentEvents
   index/                  SQLite cache (per profile+region) + in-memory index
+  prefs/                  Per-context user prefs (favorites + recents) — separate DB
   search/                 Fuzzy matcher, prefix matcher, scope parser
   tui/                    Bubbletea TUI — model, views, actions, styles
   debuglog/               Optional slog-backed debug log (SCOUT_DEBUG=1)
@@ -51,6 +52,7 @@ core (root — no internal imports)
 - Provider packages (`awsctx/*`) import `services`, `core`, `awsctx`
 - `tui` imports `services`, `core`, `search`, `index`, `awsctx/*` adapters
 - `search` imports `core` (and `core.LookupAlias` for scope parsing — NOT `services`, to avoid a cycle)
+- `prefs` imports only `core` + stdlib + sqlite driver — deliberately kept free of other internal deps
 - To avoid `search → services → search` cycle, alias registration flows through `core.RegisterAlias`/`core.LookupAlias`
 
 ## Adding a new AWS service
@@ -149,6 +151,17 @@ Typing `<alias>:` in the search bar restricts results to one resource type. The 
 ### Editor integration
 
 Interactive actions (Lambda Run, SSM Update Value) suspend the TUI via `tea.ExecProcess`, open `$EDITOR` on a temp file, and resume on editor close. The handler checks file mtime to detect "quit without saving" and validates JSON for Lambda payloads.
+
+### Favorites and Recents (per-context user preferences)
+
+`internal/prefs/` owns a second SQLite file per `(profile, region)` pair — `<profile>__<region>__prefs.db` — storing the user's favorites (pinned with `f`) and the last-10 resources whose Details view they entered. The TUI holds a `*prefs.DB` and a `*prefs.State` (in-memory snapshot) on the `Model` and consults the state from:
+
+- the home page (`tui/home.go`) rendered on empty input,
+- the search ranker (`tui/ranking.go`) which sorts favorites ahead of non-favorites,
+- the row renderer (`tui/results.go`) which prepends `★ ` to favorited rows,
+- the hint line (`tui/hint.go`) that advertises the `f` shortcut above the status bar.
+
+`scout cache clear` does NOT touch prefs files. Context-switch (Ctrl+P) closes the old prefs DB and opens the new one.
 
 ## File reference
 

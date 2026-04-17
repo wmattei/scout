@@ -213,6 +213,7 @@ Key bindings:
   ↑/↓         Navigate results
   Tab          Autocomplete / drill into bucket
   Enter        Open details + actions
+  f            Toggle favorite on focused resource
   Esc          Back
   Ctrl+P       Switch AWS profile/region
   Ctrl+C       Quit
