@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -150,8 +151,10 @@ func runTUI() (err error) {
 	return nil
 }
 
-// runCacheClear wipes the entire on-disk cache directory. Safe to call
-// when the directory does not exist. Prints a single line on success.
+// runCacheClear wipes the on-disk AWS resource cache. User preference
+// files (*__prefs.db holding favorites and recents) are preserved
+// by design — clearing the cache should not destroy user state.
+// Safe to call when the directory does not exist.
 func runCacheClear() error {
 	dir, err := cacheDir()
 	if err != nil {
@@ -161,10 +164,28 @@ func runCacheClear() error {
 		fmt.Println("scout: cache already clear")
 		return nil
 	}
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("removing %s: %w", dir, err)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("listing %s: %w", dir, err)
 	}
-	fmt.Printf("scout: cleared cache at %s\n", dir)
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, "__prefs.db") {
+			continue
+		}
+		if !strings.HasSuffix(name, ".db") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil {
+			return fmt.Errorf("removing %s: %w", name, err)
+		}
+		removed++
+	}
+	fmt.Printf("scout: cleared %d cache file(s) at %s (prefs preserved)\n", removed, dir)
 	return nil
 }
 
