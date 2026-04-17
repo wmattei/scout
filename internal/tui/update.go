@@ -345,6 +345,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsResource = visible[m.selected].Resource
 		m.actionSel = 0
 		m.mode = modeDetails
+		// Record the visit for recents. Swallow errors — a failed
+		// prefs write shouldn't block entering Details; the worst case
+		// is this resource doesn't show up in Recents next launch.
+		if m.prefs != nil {
+			_ = m.prefs.MarkVisited(m.prefsState, m.detailsResource)
+		}
 		// Generic lazy-detail resolution. Every provider that has a
 		// non-trivial ResolveDetails participates — the message
 		// handler stores the result in m.lazyDetails keyed by
