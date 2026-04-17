@@ -141,7 +141,10 @@ func writeSchemaVersion(db *sql.DB) error {
 		"INSERT INTO meta(k, v) VALUES('schema_version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
 		fmt.Sprintf("%d", schemaVersion),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("writing prefs schema_version: %w", err)
+	}
+	return nil
 }
 
 // cacheDir mirrors internal/index.cacheDir. Duplicated to keep the

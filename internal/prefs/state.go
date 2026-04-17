@@ -53,7 +53,10 @@ func (s *State) Favorites() []FavoriteRow {
 	for _, r := range s.favorites {
 		out = append(out, r)
 	}
-	sort.Slice(out, func(i, j int) bool {
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].Key < out[j].Key
+		}
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
 	return out

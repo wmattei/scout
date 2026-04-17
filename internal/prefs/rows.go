@@ -44,6 +44,12 @@ type RecentRow struct {
 // Mirrors internal/index/db.go's parseType; duplicated here to avoid
 // importing internal/index (no cycle today but keeps prefs genuinely
 // independent).
+//
+// TODO: once a third caller appears, promote this to
+// core.ParseResourceType(s) (ResourceType, bool) so unknown types
+// can be rejected rather than silently coerced to RTypeBucket. For
+// this package, the schema-version drop-and-recreate bounds the
+// window where an unknown type could land in storage.
 func parseType(s string) core.ResourceType {
 	switch s {
 	case "bucket":
