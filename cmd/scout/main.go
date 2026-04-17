@@ -133,7 +133,11 @@ func runTUI() (err error) {
 
 	prefsDB, prefsState, err := prefs.Open(awsCtx.Profile, awsCtx.Region)
 	if err != nil {
-		return fmt.Errorf("opening prefs: %w", err)
+		// Non-fatal: the TUI handles nil prefs gracefully (toggle
+		// and MarkVisited become no-ops, home page falls back to
+		// the cache-empty message). Log the failure and continue.
+		debuglog.Logger().Warn("prefs unavailable", "err", err)
+		prefsDB, prefsState = nil, nil
 	}
 	defer prefsDB.Close()
 
