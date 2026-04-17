@@ -64,22 +64,29 @@ func (m Model) View() string {
 }
 
 // renderSearchBody produces the middle zone for modeSearch — either the
-// top-level fuzzy list or the scoped prefix list, with the right empty
-// state when nothing is active.
+// top-level fuzzy list, the scoped prefix list, the Favorites+Recents
+// home page (empty input with user prefs), or the right empty state
+// when nothing is active.
 func (m Model) renderSearchBody(height int) string {
+	inputValue := m.input.Value()
+
+	// Home page takes over when the input is empty AND the user has
+	// at least one favorite or recent. Otherwise fall through to the
+	// normal empty-state logic below so first-run users see the
+	// cache-empty guidance.
+	if inputValue == "" && homeActive(m) {
+		return renderHome(m, buildHomeSections(m), m.width, height)
+	}
+
 	visible := m.visibleSearchResults()
 
 	emptyMsg := "no results"
-	inputValue := m.input.Value()
 	switch {
 	case inputValue == "" && m.memory.Len() == 0:
 		emptyMsg = "empty cache — run `scout preload all` or type a service scope (s3:, ecs:, td:)"
 	case inputValue == "":
 		emptyMsg = "start typing to search cached resources"
 	case m.isLoadingScoped() && len(visible) == 0:
-		// Scoped search is in flight and we have nothing to show yet.
-		// Render a loading message with the spinner frame so the user
-		// knows the list is still being fetched, not genuinely empty.
 		emptyMsg = fmt.Sprintf("%s  loading %s", spinnerFrame(m.spinTick), inputValue)
 	case len(visible) == 0:
 		emptyMsg = fmt.Sprintf("no matches for %q", inputValue)

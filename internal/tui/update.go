@@ -651,14 +651,18 @@ func (m Model) isLoadingScoped() bool {
 // visibleSearchResults returns whichever result list is currently active
 // so arrow keys and Enter operate on the same set the user is seeing.
 //
-// Only the S3 drill-in mode (scope.Bucket != "") routes through
-// m.scopedResults — that's the slice the live ListObjectsV2 path
-// populates. Top-level fuzzy AND service-scope mode both populate
-// m.results, so they share the same accessor.
+// Selection priorities:
+//  1. S3 drill-in mode (scope.Bucket != "") → m.scopedResults.
+//  2. Empty input + at least one favorite or recent → home rows
+//     (favorites flattened with recents appended).
+//  3. Otherwise → m.results (top-level fuzzy and service-scope).
 func (m Model) visibleSearchResults() []search.Result {
 	scope := search.ParseScope(m.input.Value())
 	if scope.Bucket != "" {
 		return m.scopedResults
+	}
+	if homeActive(m) {
+		return homeRows(m)
 	}
 	return m.results
 }
