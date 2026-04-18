@@ -33,21 +33,21 @@ func renderDetails(m Model, width int) string {
 	// Partition provider rows by zone. Providers that pre-date the
 	// zoned layout all emit ZoneMetadata (the zero value), so this
 	// partition is a no-op for them.
-	var metadataRows []services.DetailRow
+	var statusRows, metadataRows, eventRows []services.DetailRow
 	var logRow *services.DetailRow
 	if p, ok := services.Get(r.Type); ok {
 		lazy := m.lazyDetailsFor(r)
 		rows := p.DetailRows(r, lazy)
 		for _, row := range rows {
 			switch row.Zone {
-			case ZoneMetadata: // zero value — all pre-zoned providers land here
+			case ZoneStatus:
+				statusRows = append(statusRows, row)
+			case ZoneEvents:
+				eventRows = append(eventRows, row)
+			default: // ZoneMetadata + zero value
 				metadataRows = append(metadataRows, row)
 			}
 		}
-		// Synthesize a Log row when the provider has no DetailRows but
-		// does expose a log group. Mirrors the pre-zoned behavior so
-		// providers that rely on it (e.g. Lambda's fallback) keep
-		// working.
 		if len(rows) == 0 {
 			if group := p.LogGroup(r, lazy); group != "" {
 				logRow = &services.DetailRow{Label: "Log", Value: group}
@@ -56,11 +56,26 @@ func renderDetails(m Model, width int) string {
 	}
 
 	identityBlock := renderIdentityZone(m, r, 34)
+	statusBlock := renderStatusZone(statusRows, 22)
 	metadataBlock := renderMetadataZone(m, metadataRows, logRow, 40)
+	eventsBlock := renderEventsZone(eventRows, 52)
 	actionsBlock := renderActionsZone(m, 28)
 
-	topRow := lipgloss.JoinHorizontal(lipgloss.Top, identityBlock, "  ", metadataBlock)
+	// Top row: only include zones that have content.
+	topParts := []string{identityBlock}
+	if statusBlock != "" {
+		topParts = append(topParts, "  ", statusBlock)
+	}
+	if metadataBlock != "" {
+		topParts = append(topParts, "  ", metadataBlock)
+	}
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top, topParts...)
+
+	// Bottom row: actions on the left, events (if any) on the right.
 	bottomRow := actionsBlock
+	if eventsBlock != "" {
+		bottomRow = lipgloss.JoinHorizontal(lipgloss.Top, actionsBlock, "  ", eventsBlock)
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, topRow, "", bottomRow)
 }
@@ -165,6 +180,40 @@ func renderActionsZone(m Model, width int) string {
 		}
 	}
 	return renderZoneBlock("ACTIONS", b.String(), width)
+}
+
+// renderStatusZone renders the top-center Status zone from rows the
+// provider tagged ZoneStatus. Returns "" (signaling collapse) when
+// there are no status rows.
+func renderStatusZone(rows []services.DetailRow, width int) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, row := range rows {
+		b.WriteString(row.Value)
+		if i < len(rows)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return renderZoneBlock("STATUS", b.String(), width)
+}
+
+// renderEventsZone renders the bottom-right Events zone. Each row's
+// Value is rendered on its own line (Label is intentionally ignored;
+// event lines are preformatted strings from the provider).
+func renderEventsZone(rows []services.DetailRow, width int) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, row := range rows {
+		b.WriteString(row.Value)
+		if i < len(rows)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return renderZoneBlock("RECENT EVENTS", b.String(), width)
 }
 
 // renderZoneBlock wraps body in a rounded-border block with a dim
