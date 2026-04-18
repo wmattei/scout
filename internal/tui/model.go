@@ -31,6 +31,15 @@ const (
 	lazyStateResolved                        // command landed, m.lazyDetails populated
 )
 
+// clickRegion is a rectangular hit-box in the rendered frame used by
+// the Details-mode mouse handler. X0/Y0 are inclusive, X1/Y1 are
+// exclusive; coordinates are in frame-absolute cell units so a
+// tea.MouseMsg's X/Y can be tested directly.
+type clickRegion struct {
+	X0, Y0, X1, Y1 int
+	Clipboard      string
+	Label          string
+}
 
 // Model is the bubbletea model for the search + details views.
 // Mode split: modeSearch runs the input bar + result list,
@@ -66,6 +75,12 @@ type Model struct {
 	// Details-mode state.
 	detailsResource core.Resource
 	actionSel       int
+	// detailsHitMap holds the clickable regions for the currently-
+	// rendered Details frame. It is a pointer so the View-time
+	// rendering (which sees a value-copy of Model) can populate it
+	// without returning a new Model. Update reads the slice on
+	// tea.MouseMsg to match a click against a cell.
+	detailsHitMap *[]clickRegion
 	// lazyDetails is the generic per-resource extra-data store
 	// populated by services.Provider.ResolveDetails. Keyed by
 	// (resource type, resource key) so different types can't
@@ -139,6 +154,7 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		lazyDetailsState:    make(map[lazyDetailKey]lazyDetailState),
 		tailViewport:        viewport.New(80, 10),
 		serviceScopeFetched: make(map[string]struct{}),
+		detailsHitMap:       new([]clickRegion),
 	}
 }
 
