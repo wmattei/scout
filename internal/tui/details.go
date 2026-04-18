@@ -55,11 +55,28 @@ func renderDetails(m Model, width int) string {
 		}
 	}
 
-	identityBlock := renderIdentityZone(m, r, 34)
-	statusBlock := renderStatusZone(statusRows, 22)
-	metadataBlock := renderMetadataZone(m, metadataRows, logRow, 40)
-	eventsBlock := renderEventsZone(eventRows, 52)
-	actionsBlock := renderActionsZone(m, 28)
+	identityW := 34
+	statusW := 22
+	metadataW := 40
+	eventsW := 52
+	actionsW := 28
+	if width < 75 {
+		// In narrow mode each zone renders full frame-width (stacked
+		// vertically), so give them the whole budget.
+		identityW, statusW, metadataW, eventsW, actionsW = width, width, width, width, width
+	}
+	identityBlock := renderIdentityZone(m, r, identityW)
+	statusBlock := renderStatusZone(statusRows, statusW)
+	metadataBlock := renderMetadataZone(m, metadataRows, logRow, metadataW)
+	eventsBlock := renderEventsZone(eventRows, eventsW)
+	actionsBlock := renderActionsZone(m, actionsW)
+
+	// Narrow terminals (<75 cols) can't fit the three-column top row
+	// without overlap; stack all non-empty zones vertically instead.
+	if width < 75 {
+		return renderDetailsStacked(width,
+			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock)
+	}
 
 	// Top row: only include zones that have content.
 	topParts := []string{identityBlock}
@@ -78,6 +95,29 @@ func renderDetails(m Model, width int) string {
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, topRow, "", bottomRow)
+}
+
+// renderDetailsStacked produces the narrow-mode layout: all zones
+// stacked top-to-bottom in the canonical order (Identity, Status,
+// Metadata, Events, Actions), each rendered full frame-width.
+// Collapsed zones (empty strings) are skipped so the stack is
+// contiguous.
+func renderDetailsStacked(width int, identity, status, metadata, events, actions string) string {
+	zones := []string{identity}
+	if status != "" {
+		zones = append(zones, status)
+	}
+	if metadata != "" {
+		zones = append(zones, metadata)
+	}
+	if events != "" {
+		zones = append(zones, events)
+	}
+	if actions != "" {
+		zones = append(zones, actions)
+	}
+	_ = width // reserved for future tightening; zones already render at width
+	return lipgloss.JoinVertical(lipgloss.Left, zones...)
 }
 
 // ZoneMetadata/ZoneStatus/ZoneEvents constant aliases local to this
