@@ -117,12 +117,19 @@ func (ssmParameterProvider) DetailRows(r core.Resource, lazy map[string]string) 
 		{Label: "Type", Value: colorParamType(lazy[MetaType])},
 	}
 
-	// Value — truncate very long values.
-	value := lazy["value"]
+	// Value — truncate very long values for display but copy the
+	// full raw value on click.
+	rawValue := lazy["value"]
+	value := rawValue
 	if len(value) > 200 {
 		value = value[:200] + styleDim.Render("  … (truncated)")
 	}
-	rows = append(rows, services.DetailRow{Label: "Value", Value: value})
+	rows = append(rows, services.DetailRow{
+		Label:          "Value",
+		Value:          value,
+		Clickable:      true,
+		ClipboardValue: rawValue,
+	})
 
 	if v := lazy[MetaVersion]; v != "" {
 		rows = append(rows, services.DetailRow{Label: "Version", Value: v})
