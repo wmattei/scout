@@ -54,7 +54,7 @@ func (m Model) View() string {
 		// from the top of the frame (input + divider), so every
 		// region's Y is shifted by 2 before the mouse handler sees
 		// it.
-		body = renderDetails(m, m.width)
+		body = renderDetails(m, m.width, bodyHeight)
 		body = padBlock(body, bodyHeight)
 		if m.detailsHitMap != nil {
 			const bodyOriginY = 2

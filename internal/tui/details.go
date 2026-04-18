@@ -29,7 +29,7 @@ import (
 // carry clickable cells that publish hit regions into
 // *m.detailsHitMap for the Update-loop mouse handler to copy
 // on left-click.
-func renderDetails(m Model, width int) string {
+func renderDetails(m Model, width, height int) string {
 	r := m.detailsResource
 
 	// Partition provider rows by zone. Providers that pre-date the
@@ -57,19 +57,73 @@ func renderDetails(m Model, width int) string {
 		}
 	}
 
+	// Narrow mode: full-width zones, stacked vertically, natural
+	// heights — same behavior as before.
+	if width < 75 {
+		identityBlock, identityRegs := renderIdentityZone(m, r, width, 0)
+		statusBlock, _ := renderStatusZone(statusRows, width, 0)
+		metadataBlock, metaRegs := renderMetadataZone(m, metadataRows, logRow, width, 0)
+		eventsBlock, _ := renderEventsZone(eventRows, width, 0)
+		actionsBlock, _ := renderActionsZone(m, width, 0)
+		const zoneBodyOffsetX = 2
+		const zoneBodyOffsetY = 1
+		return renderDetailsStackedWithRegions(m, width, zoneBodyOffsetX, zoneBodyOffsetY,
+			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock,
+			identityRegs, metaRegs)
+	}
+
+	// Wide mode: flex zone widths so the top and bottom rows span
+	// the full frame width.
+	const gap = 2
 	identityW := 34
 	statusW := 22
-	metadataW := 40
-	eventsW := 52
 	actionsW := 28
-	if width < 75 {
-		identityW, statusW, metadataW, eventsW, actionsW = width, width, width, width, width
+	metadataW := width - identityW - gap
+	if len(statusRows) > 0 {
+		metadataW -= statusW + gap
 	}
-	identityBlock, identityRegs := renderIdentityZone(m, r, identityW)
-	statusBlock, _ := renderStatusZone(statusRows, statusW)
-	metadataBlock, metaRegs := renderMetadataZone(m, metadataRows, logRow, metadataW)
-	eventsBlock, _ := renderEventsZone(eventRows, eventsW)
-	actionsBlock, _ := renderActionsZone(m, actionsW)
+	if metadataW < 30 {
+		metadataW = 30
+	}
+	eventsW := width - actionsW - gap
+	if eventsW < 30 {
+		eventsW = 30
+	}
+
+	// Render the top zones with natural heights first so we know
+	// the maximum. Then re-render with the uniform height so all
+	// three borders close on the same row.
+	idNat, _ := renderIdentityZone(m, r, identityW, 0)
+	stNat, _ := renderStatusZone(statusRows, statusW, 0)
+	mdNat, _ := renderMetadataZone(m, metadataRows, logRow, metadataW, 0)
+	topHeight := lipgloss.Height(idNat)
+	if len(statusRows) > 0 && lipgloss.Height(stNat) > topHeight {
+		topHeight = lipgloss.Height(stNat)
+	}
+	if mdNat != "" && lipgloss.Height(mdNat) > topHeight {
+		topHeight = lipgloss.Height(mdNat)
+	}
+
+	identityBlock, identityRegs := renderIdentityZone(m, r, identityW, topHeight)
+	statusBlock, _ := renderStatusZone(statusRows, statusW, topHeight)
+	metadataBlock, metaRegs := renderMetadataZone(m, metadataRows, logRow, metadataW, topHeight)
+
+	// Bottom row height fills the remaining body budget (minus the
+	// blank separator row between top and bottom). Events stretches
+	// to fill; Actions matches the same height so both borders
+	// close on the same row.
+	bottomHeight := height - topHeight - 1
+	acNat, _ := renderActionsZone(m, actionsW, 0)
+	evNat, _ := renderEventsZone(eventRows, eventsW, 0)
+	naturalBottom := lipgloss.Height(acNat)
+	if evNat != "" && lipgloss.Height(evNat) > naturalBottom {
+		naturalBottom = lipgloss.Height(evNat)
+	}
+	if bottomHeight < naturalBottom {
+		bottomHeight = naturalBottom
+	}
+	actionsBlock, _ := renderActionsZone(m, actionsW, bottomHeight)
+	eventsBlock, _ := renderEventsZone(eventRows, eventsW, bottomHeight)
 
 	// Inside each zone block the body starts at (2, 1) — 1 border
 	// row at the top plus 1 padding column on the left, plus the 1
@@ -79,34 +133,22 @@ func renderDetails(m Model, width int) string {
 	const zoneBodyOffsetX = 2
 	const zoneBodyOffsetY = 1
 
-	if width < 75 {
-		return renderDetailsStackedWithRegions(m, width, zoneBodyOffsetX, zoneBodyOffsetY,
-			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock,
-			identityRegs, metaRegs)
-	}
-
 	// Wide layout: three-column top row (Identity, Status, Metadata),
 	// two-column bottom row (Actions, Events). Track zone origins so
 	// the returned regions can be offset into frame-absolute coords.
 	topParts := []string{identityBlock}
 	identityX := 0
-	statusX := 0
 	metadataX := 0
 	cursorX := lipgloss.Width(identityBlock)
 	if statusBlock != "" {
 		topParts = append(topParts, "  ", statusBlock)
-		statusX = cursorX + 2
-		cursorX = statusX + lipgloss.Width(statusBlock)
+		cursorX = cursorX + gap + lipgloss.Width(statusBlock)
 	}
 	if metadataBlock != "" {
 		topParts = append(topParts, "  ", metadataBlock)
-		metadataX = cursorX + 2
+		metadataX = cursorX + gap
 	}
 	topRow := lipgloss.JoinHorizontal(lipgloss.Top, topParts...)
-	_ = statusX // Status zone has no clickable cells in v1
-
-	topHeight := lipgloss.Height(topRow)
-	bottomY := topHeight + 1 // +1 for the blank separator row inserted by JoinVertical
 
 	// Wire frame-absolute regions from the zone-local ones.
 	var regions []clickRegion
@@ -121,7 +163,6 @@ func renderDetails(m Model, width int) string {
 	if m.detailsHitMap != nil {
 		*m.detailsHitMap = regions
 	}
-	_ = bottomY // Actions/Events rows have no clickable cells in v1
 
 	bottomRow := actionsBlock
 	if eventsBlock != "" {
@@ -206,7 +247,7 @@ const (
 // are always marked clickable. Returns the rendered block plus
 // zone-local click regions (in cell coordinates relative to the
 // zone block's top-left corner) for the Name and ARN rows.
-func renderIdentityZone(m Model, r core.Resource, width int) (string, []clickRegion) {
+func renderIdentityZone(m Model, r core.Resource, width, height int) (string, []clickRegion) {
 	var b strings.Builder
 	var regions []clickRegion
 
@@ -235,20 +276,20 @@ func renderIdentityZone(m Model, r core.Resource, width int) (string, []clickReg
 	}
 
 	body := strings.TrimRight(b.String(), "\n")
-	return renderZoneBlock("IDENTITY", body, width), regions
+	return renderZoneBlock("IDENTITY", body, width, height), regions
 }
 
 // renderMetadataZone renders the top-right Metadata zone. Clickable
 // rows are styled and tracked in the returned region slice (local
 // zone coordinates; caller offsets them into frame-absolute coords).
-func renderMetadataZone(m Model, rows []services.DetailRow, logFallback *services.DetailRow, width int) (string, []clickRegion) {
+func renderMetadataZone(m Model, rows []services.DetailRow, logFallback *services.DetailRow, width, height int) (string, []clickRegion) {
 	if len(rows) == 0 && logFallback == nil {
 		inFlight := m.lazyDetailsState[lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}] == lazyStateInFlight
 		if !inFlight {
 			return "", nil
 		}
 		body := styleRowDim.Render("resolving details…")
-		return renderZoneBlock("METADATA", body, width), nil
+		return renderZoneBlock("METADATA", body, width, height), nil
 	}
 
 	var b strings.Builder
@@ -291,16 +332,16 @@ func renderMetadataZone(m Model, rows []services.DetailRow, logFallback *service
 	}
 
 	body := strings.TrimRight(b.String(), "\n")
-	return renderZoneBlock("METADATA", body, width), regions
+	return renderZoneBlock("METADATA", body, width, height), regions
 }
 
 // renderActionsZone renders the bottom-left Actions zone. Actions
 // are keyboard-driven — not clickable in v1.
-func renderActionsZone(m Model, width int) (string, []clickRegion) {
+func renderActionsZone(m Model, width, height int) (string, []clickRegion) {
 	actions := ActionsFor(m.detailsResource.Type)
 	if len(actions) == 0 {
 		body := styleRowDim.Render("(no actions available)")
-		return renderZoneBlock("ACTIONS", body, width), nil
+		return renderZoneBlock("ACTIONS", body, width, height), nil
 	}
 
 	var b strings.Builder
@@ -318,12 +359,12 @@ func renderActionsZone(m Model, width int) (string, []clickRegion) {
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("ACTIONS", b.String(), width), nil
+	return renderZoneBlock("ACTIONS", b.String(), width, height), nil
 }
 
 // renderStatusZone renders the top-center Status zone. Status rows
 // are informational — never clickable — so no regions are produced.
-func renderStatusZone(rows []services.DetailRow, width int) (string, []clickRegion) {
+func renderStatusZone(rows []services.DetailRow, width, height int) (string, []clickRegion) {
 	if len(rows) == 0 {
 		return "", nil
 	}
@@ -334,12 +375,12 @@ func renderStatusZone(rows []services.DetailRow, width int) (string, []clickRegi
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("STATUS", b.String(), width), nil
+	return renderZoneBlock("STATUS", b.String(), width, height), nil
 }
 
 // renderEventsZone renders the Events zone. Event rows are dim text
 // lines — not clickable in v1.
-func renderEventsZone(rows []services.DetailRow, width int) (string, []clickRegion) {
+func renderEventsZone(rows []services.DetailRow, width, height int) (string, []clickRegion) {
 	if len(rows) == 0 {
 		return "", nil
 	}
@@ -350,19 +391,29 @@ func renderEventsZone(rows []services.DetailRow, width int) (string, []clickRegi
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("RECENT EVENTS", b.String(), width), nil
+	return renderZoneBlock("RECENT EVENTS", b.String(), width, height), nil
 }
 
 // renderZoneBlock wraps body in a rounded-border block with a dim
 // header label in the top-left of the border. width is the total
 // visible width including the 2-column border; content inside gets
-// width-4 (2 border + 2 padding columns).
-func renderZoneBlock(header, body string, width int) string {
+// width-4 (2 border + 2 padding columns). When height > 0, the
+// block is padded vertically so the total rendered height (border
+// included) equals that value; use 0 to size naturally to content.
+func renderZoneBlock(header, body string, width, height int) string {
 	innerWidth := width - 4
 	if innerWidth < 1 {
 		innerWidth = 1
 	}
-	block := styleZoneBorder.Width(innerWidth).Render(body)
+	style := styleZoneBorder.Width(innerWidth)
+	if height > 0 {
+		innerHeight := height - 2 // 2 border rows
+		if innerHeight < 1 {
+			innerHeight = 1
+		}
+		style = style.Height(innerHeight)
+	}
+	block := style.Render(body)
 	// Overlay the header in the top border. The top border is the
 	// first line of the rendered block; splice the header label into
 	// it preserving the border characters on either side.
