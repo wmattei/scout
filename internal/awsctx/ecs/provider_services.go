@@ -162,29 +162,10 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 	}
 
 	rows := []services.DetailRow{
-		{Label: "Cluster", Value: r.Meta[MetaCluster]},
-		{Label: "Status", Value: colorStatus(lazy["status"])},
-		{Label: "Tasks", Value: colorTasks(lazy["desiredCount"], lazy["runningCount"], lazy["pendingCount"])},
+		// Status zone — three prominent state rows.
+		{Zone: services.ZoneStatus, Value: colorStatus(lazy["status"])},
+		{Zone: services.ZoneStatus, Value: colorTasks(lazy["desiredCount"], lazy["runningCount"], lazy["pendingCount"])},
 	}
-
-	// Launch + platform.
-	launch := lazy[MetaLaunchType]
-	if pv := lazy["platformVersion"]; pv != "" {
-		launch = launch + "  ·  " + pv
-	}
-	rows = append(rows, services.DetailRow{Label: "Launch", Value: launch})
-
-	// Task def family:revision.
-	if family := lazy["family"]; family != "" {
-		rev := lazy["revision"]
-		td := family
-		if rev != "" {
-			td = family + ":" + rev
-		}
-		rows = append(rows, services.DetailRow{Label: "Task def", Value: td})
-	}
-
-	// Deployment rollout state + circuit breaker.
 	if rs := lazy["deploymentRolloutState"]; rs != "" {
 		val := colorRollout(rs)
 		if reason := lazy["deploymentRolloutReason"]; reason != "" {
@@ -197,19 +178,46 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 			}
 			val = val + "  " + styleDim.Render(cb)
 		}
-		rows = append(rows, services.DetailRow{Label: "Deployment", Value: val})
+		rows = append(rows, services.DetailRow{Zone: services.ZoneStatus, Value: val})
 	}
 
-	// Load balancer target groups (short names only).
+	// Metadata zone — the key/value bag.
+	rows = append(rows, services.DetailRow{Label: "Cluster", Value: r.Meta[MetaCluster]})
+
+	launch := lazy[MetaLaunchType]
+	if pv := lazy["platformVersion"]; pv != "" {
+		launch = launch + "  ·  " + pv
+	}
+	rows = append(rows, services.DetailRow{Label: "Launch", Value: launch})
+
+	if family := lazy["family"]; family != "" {
+		rev := lazy["revision"]
+		td := family
+		if rev != "" {
+			td = family + ":" + rev
+		}
+		rows = append(rows, services.DetailRow{
+			Label:          "Task def",
+			Value:          td,
+			Clickable:      true,
+			ClipboardValue: td,
+		})
+	}
+
 	if tgs := format.DecodeJSONSlice(lazy["targetGroups"]); len(tgs) > 0 {
 		short := make([]string, 0, len(tgs))
 		for _, arn := range tgs {
 			short = append(short, lastARNSegment(arn))
 		}
-		rows = append(rows, services.DetailRow{Label: "LB target", Value: strings.Join(short, ", ")})
+		joined := strings.Join(short, ", ")
+		rows = append(rows, services.DetailRow{
+			Label:          "LB target",
+			Value:          joined,
+			Clickable:      true,
+			ClipboardValue: joined,
+		})
 	}
 
-	// Created / Updated with relative age.
 	if ts := lazy["createdAt"]; ts != "" {
 		rows = append(rows, services.DetailRow{Label: "Created", Value: styleDim.Render(format.TimeAge(ts))})
 	}
@@ -217,20 +225,22 @@ func (ecsServiceProvider) DetailRows(r core.Resource, lazy map[string]string) []
 		rows = append(rows, services.DetailRow{Label: "Updated", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
-	// Log group (already shown in the existing renderDetails caller;
-	// duplicated here so a DetailRow-based renderer has the full row
-	// set without special-casing log groups).
 	if lg := lazy["logGroup"]; lg != "" {
-		rows = append(rows, services.DetailRow{Label: "Log", Value: lg})
+		rows = append(rows, services.DetailRow{
+			Label:          "Log",
+			Value:          lg,
+			Clickable:      true,
+			ClipboardValue: lg,
+		})
 	}
 
-	// Recent events — blank separator row, section header, then up to
-	// 5 event lines.
+	// Events zone — preformatted event lines, newest first.
 	if events := format.DecodeJSONSlice(lazy["events"]); len(events) > 0 {
-		rows = append(rows, services.DetailRow{}) // blank spacer
-		rows = append(rows, services.DetailRow{Value: styleHeader.Render("Recent events")})
 		for _, ev := range events {
-			rows = append(rows, services.DetailRow{Label: "", Value: styleDim.Render(ev)})
+			rows = append(rows, services.DetailRow{
+				Zone:  services.ZoneEvents,
+				Value: styleDim.Render(ev),
+			})
 		}
 	}
 
