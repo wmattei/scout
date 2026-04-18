@@ -163,6 +163,14 @@ Interactive actions (Lambda Run, SSM Update Value) suspend the TUI via `tea.Exec
 
 `scout cache clear` does NOT touch prefs files. Context-switch (Ctrl+P) closes the old prefs DB and opens the new one.
 
+### Zoned Details UI
+
+`tui/details.go` renders the Details view as a dashboard of lipgloss bordered zones: **Identity** top-left (Name, color-coded type chip via `Provider.TagStyle()`, ARN), **Status** top-center (prominent state rows), **Metadata** top-right (the per-provider key/value bag), **Events** bottom-right (variable-length event stream), **Actions** bottom-left (numbered action list). Below 75 columns the zones stack vertically in the same order.
+
+Providers opt rows into zones via `services.DetailRow.Zone` (`ZoneStatus`, `ZoneEvents`, default `ZoneMetadata`). Any DetailRow can be marked `Clickable: true` to render underlined dim-blue and become copy-on-click. `Name` and `ARN` in Identity are always clickable. Click dispatch happens in the top-level `Update` handler via `tea.MouseMsg`; `renderDetails` publishes a `[]clickRegion` into a pointer-valued slice on the Model (`m.detailsHitMap`) on every frame.
+
+Keyboard behaviour is unchanged — mouse clicks only copy; every existing shortcut (number hotkeys, Enter, `f`, Esc, Ctrl+P) still routes through the keyboard path.
+
 ## File reference
 
 ### `cmd/scout/`

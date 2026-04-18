@@ -239,6 +239,7 @@ Key bindings:
   Tab          Autocomplete / drill into bucket
   Enter        Open details + actions
   f            Toggle favorite on focused resource
+  Click        Copy Name / ARN / linked cell in Details
   Esc          Back
   Ctrl+P       Switch AWS profile/region
   Ctrl+C       Quit
