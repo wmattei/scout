@@ -58,6 +58,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tailViewport.Height = vpHeight
 		return m, nil
 
+	case tea.MouseMsg:
+		if m.mode != modeDetails {
+			return m, nil
+		}
+		if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+			return m, nil
+		}
+		if m.detailsHitMap == nil {
+			return m, nil
+		}
+		for _, rg := range *m.detailsHitMap {
+			if msg.X >= rg.X0 && msg.X < rg.X1 && msg.Y >= rg.Y0 && msg.Y < rg.Y1 {
+				if err := copyToClipboard(rg.Clipboard); err != nil {
+					m.toast = newErrorToast("copy failed: " + err.Error())
+				} else {
+					m.toast = newSuccessToast("copied " + rg.Label)
+				}
+				return m, nil
+			}
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.width < 60 && msg.String() != "ctrl+c" {
 			return m, nil
