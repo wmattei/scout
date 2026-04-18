@@ -181,17 +181,32 @@ func (ecsTaskDefProvider) DetailRows(r core.Resource, lazy map[string]string) []
 	}
 
 	// IAM roles — show just the role name (last segment of the ARN)
-	// for readability, or the full ARN if it doesn't parse.
+	// for readability, but copy the full ARN on click.
 	if role := lazy["taskRole"]; role != "" {
-		rows = append(rows, services.DetailRow{Label: "Task role", Value: shortRole(role)})
+		rows = append(rows, services.DetailRow{
+			Label:          "Task role",
+			Value:          shortRole(role),
+			Clickable:      true,
+			ClipboardValue: role,
+		})
 	}
 	if role := lazy["execRole"]; role != "" {
-		rows = append(rows, services.DetailRow{Label: "Exec role", Value: shortRole(role)})
+		rows = append(rows, services.DetailRow{
+			Label:          "Exec role",
+			Value:          shortRole(role),
+			Clickable:      true,
+			ClipboardValue: role,
+		})
 	}
 
 	// Log group.
 	if lg := lazy["logGroup"]; lg != "" {
-		rows = append(rows, services.DetailRow{Label: "Log", Value: lg})
+		rows = append(rows, services.DetailRow{
+			Label:          "Log",
+			Value:          lg,
+			Clickable:      true,
+			ClipboardValue: lg,
+		})
 	}
 
 	// Containers + images as a sub-section.
