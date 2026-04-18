@@ -12,7 +12,7 @@ import (
 
 // renderDetails produces the zoned Details screen for m.detailsResource.
 // width is the frame width; the caller (view.go) passes the full frame
-// width in. Layout (wide mode):
+// width in. Layout (wide mode, width >= 75):
 //
 //	┌ IDENTITY ──┐ ┌ STATUS ─┐ ┌ METADATA ─────┐
 //	│ Name  …    │ │ …       │ │ …             │
@@ -24,9 +24,11 @@ import (
 //	│ 2. …       │              └───────────────┘
 //	└────────────┘
 //
-// Task 4 renders Identity + Metadata + Actions only; Status + Events
-// are added in Task 5. The hit-map is populated in Task 7; this task
-// leaves m.detailsHitMap untouched.
+// Below 75 cols the zones stack vertically. Provider rows are
+// partitioned by DetailRow.Zone; Identity and Metadata zones can
+// carry clickable cells that publish hit regions into
+// *m.detailsHitMap for the Update-loop mouse handler to copy
+// on left-click.
 func renderDetails(m Model, width int) string {
 	r := m.detailsResource
 
@@ -105,7 +107,6 @@ func renderDetails(m Model, width int) string {
 
 	topHeight := lipgloss.Height(topRow)
 	bottomY := topHeight + 1 // +1 for the blank separator row inserted by JoinVertical
-	_ = metadataX
 
 	// Wire frame-absolute regions from the zone-local ones.
 	var regions []clickRegion
@@ -370,7 +371,9 @@ func renderZoneBlock(header, body string, width int) string {
 
 // overlayZoneHeader replaces part of the first line of block with
 // " HEADER " so the rounded top border reads "╭─ HEADER ──────╮".
-// Leaves other lines untouched.
+// The non-label segments of the border are re-styled with the
+// border's foreground color so the top line stays visually
+// consistent with the rest of the border.
 func overlayZoneHeader(block, header string) string {
 	lines := strings.Split(block, "\n")
 	if len(lines) == 0 {
@@ -386,31 +389,19 @@ func overlayZoneHeader(block, header string) string {
 	// Walk the rune sequence of `top`, starting at column 2 (after the
 	// left corner+dash). Replace the next `labelW` visual columns with
 	// the header label, then keep the rest of the top border intact.
+	// Re-style the non-label segments with the zone border color so
+	// the top line's corners and dashes don't reset to the terminal's
+	// default foreground.
 	runes := []rune(stripANSI(top))
 	if len(runes) < labelW+4 {
 		return block
 	}
-	newTop := string(runes[:2]) + label + string(runes[2+labelW:])
+	borderColor := lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#484848"))
+	newTop := borderColor.Render(string(runes[:2])) +
+		label +
+		borderColor.Render(string(runes[2+labelW:]))
 	lines[0] = newTop
 	return strings.Join(lines, "\n")
-}
-
-// writeZoneField appends "Label   Value\n" to b using the zone's
-// narrow label column (6 chars, like the pre-zoned Identity rows).
-func writeZoneField(b *strings.Builder, label, value string) {
-	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 6)))
-	b.WriteString(" ")
-	b.WriteString(value)
-	b.WriteString("\n")
-}
-
-// writeZoneFieldWide uses the 11-char label column for the Metadata
-// zone's wider labels (Deployment, LB target, Task def, …).
-func writeZoneFieldWide(b *strings.Builder, label, value string) {
-	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 11)))
-	b.WriteString(" ")
-	b.WriteString(value)
-	b.WriteString("\n")
 }
 
 // typeDescription returns the human-readable suffix for the Identity
