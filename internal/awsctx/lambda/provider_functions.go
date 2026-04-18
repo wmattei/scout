@@ -142,7 +142,13 @@ func (lambdaFunctionProvider) DetailRows(r core.Resource, lazy map[string]string
 	}
 
 	// Log group — convenience row so users know where logs live.
-	rows = append(rows, services.DetailRow{Label: "Log group", Value: "/aws/lambda/" + r.DisplayName})
+	logGroup := "/aws/lambda/" + r.DisplayName
+	rows = append(rows, services.DetailRow{
+		Label:          "Log group",
+		Value:          logGroup,
+		Clickable:      true,
+		ClipboardValue: logGroup,
+	})
 
 	// Layers.
 	if layers := format.DecodeJSONSlice(lazy["layers"]); len(layers) > 0 {
