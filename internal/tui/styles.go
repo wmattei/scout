@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"regexp"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -54,6 +56,18 @@ var (
 		Background(lipgloss.AdaptiveColor{Light: "#005F00", Dark: "#005F00"}).
 		Padding(0, 1)
 	styleDivider = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
+
+	// Zoned Details layout.
+	styleZoneBorder = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ac("#A8A8A8", "#484848")).
+			Padding(0, 1)
+	styleZoneHeader = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ac("#767676", "#8A8A8A"))
+	styleClickable = lipgloss.NewStyle().
+			Foreground(ac("#005FAF", "#5FD7FF")).
+			Underline(true)
 )
 
 // padTag right-pads a tag label to a fixed width so names align.
@@ -65,4 +79,16 @@ func padTag(label string) string {
 		out += " "
 	}
 	return "[" + out + "]"
+}
+
+// ansiEscape matches a single ANSI CSI or similar escape sequence.
+// Used to produce a clipboard-safe plain string from a rendered
+// lipgloss cell value.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// stripANSI removes ANSI escape sequences from s. Used by the mouse
+// hit-map to put clean text on the clipboard even when the rendered
+// cell used lipgloss styling.
+func stripANSI(s string) string {
+	return ansiEscape.ReplaceAllString(s, "")
 }
