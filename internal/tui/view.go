@@ -49,8 +49,20 @@ func (m Model) View() string {
 	var body string
 	switch m.mode {
 	case modeDetails:
+		// renderDetails populates m.detailsHitMap with regions in
+		// body-local coordinates. The body starts two lines down
+		// from the top of the frame (input + divider), so every
+		// region's Y is shifted by 2 before the mouse handler sees
+		// it.
 		body = renderDetails(m, m.width)
 		body = padBlock(body, bodyHeight)
+		if m.detailsHitMap != nil {
+			const bodyOriginY = 2
+			for i := range *m.detailsHitMap {
+				(*m.detailsHitMap)[i].Y0 += bodyOriginY
+				(*m.detailsHitMap)[i].Y1 += bodyOriginY
+			}
+		}
 	case modeTailLogs:
 		body = renderTailLogs(m, bodyHeight)
 	case modeSwitcher:

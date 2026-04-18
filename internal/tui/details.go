@@ -61,34 +61,67 @@ func renderDetails(m Model, width int) string {
 	eventsW := 52
 	actionsW := 28
 	if width < 75 {
-		// In narrow mode each zone renders full frame-width (stacked
-		// vertically), so give them the whole budget.
 		identityW, statusW, metadataW, eventsW, actionsW = width, width, width, width, width
 	}
-	identityBlock := renderIdentityZone(m, r, identityW)
-	statusBlock := renderStatusZone(statusRows, statusW)
-	metadataBlock := renderMetadataZone(m, metadataRows, logRow, metadataW)
-	eventsBlock := renderEventsZone(eventRows, eventsW)
-	actionsBlock := renderActionsZone(m, actionsW)
+	identityBlock, identityRegs := renderIdentityZone(m, r, identityW)
+	statusBlock, _ := renderStatusZone(statusRows, statusW)
+	metadataBlock, metaRegs := renderMetadataZone(m, metadataRows, logRow, metadataW)
+	eventsBlock, _ := renderEventsZone(eventRows, eventsW)
+	actionsBlock, _ := renderActionsZone(m, actionsW)
 
-	// Narrow terminals (<75 cols) can't fit the three-column top row
-	// without overlap; stack all non-empty zones vertically instead.
+	// Inside each zone block the body starts at (2, 1) — 1 border
+	// row at the top plus 1 padding column on the left, plus the 1
+	// character wide border. Callers offset their zone-local regions
+	// by this inner origin plus the zone's position in the overall
+	// frame.
+	const zoneBodyOffsetX = 2
+	const zoneBodyOffsetY = 1
+
 	if width < 75 {
-		return renderDetailsStacked(width,
-			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock)
+		return renderDetailsStackedWithRegions(m, width, zoneBodyOffsetX, zoneBodyOffsetY,
+			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock,
+			identityRegs, metaRegs)
 	}
 
-	// Top row: only include zones that have content.
+	// Wide layout: three-column top row (Identity, Status, Metadata),
+	// two-column bottom row (Actions, Events). Track zone origins so
+	// the returned regions can be offset into frame-absolute coords.
 	topParts := []string{identityBlock}
+	identityX := 0
+	statusX := 0
+	metadataX := 0
+	cursorX := lipgloss.Width(identityBlock)
 	if statusBlock != "" {
 		topParts = append(topParts, "  ", statusBlock)
+		statusX = cursorX + 2
+		cursorX = statusX + lipgloss.Width(statusBlock)
 	}
 	if metadataBlock != "" {
 		topParts = append(topParts, "  ", metadataBlock)
+		metadataX = cursorX + 2
 	}
 	topRow := lipgloss.JoinHorizontal(lipgloss.Top, topParts...)
+	_ = statusX // Status zone has no clickable cells in v1
 
-	// Bottom row: actions on the left, events (if any) on the right.
+	topHeight := lipgloss.Height(topRow)
+	bottomY := topHeight + 1 // +1 for the blank separator row inserted by JoinVertical
+	_ = metadataX
+
+	// Wire frame-absolute regions from the zone-local ones.
+	var regions []clickRegion
+	for _, rg := range identityRegs {
+		regions = append(regions, offsetRegion(rg, identityX+zoneBodyOffsetX, 0+zoneBodyOffsetY))
+	}
+	for _, rg := range metaRegs {
+		regions = append(regions, offsetRegion(rg, metadataX+zoneBodyOffsetX, 0+zoneBodyOffsetY))
+	}
+
+	// Publish regions so Update's mouse handler can match clicks.
+	if m.detailsHitMap != nil {
+		*m.detailsHitMap = regions
+	}
+	_ = bottomY // Actions/Events rows have no clickable cells in v1
+
 	bottomRow := actionsBlock
 	if eventsBlock != "" {
 		bottomRow = lipgloss.JoinHorizontal(lipgloss.Top, actionsBlock, "  ", eventsBlock)
@@ -97,26 +130,64 @@ func renderDetails(m Model, width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, topRow, "", bottomRow)
 }
 
-// renderDetailsStacked produces the narrow-mode layout: all zones
-// stacked top-to-bottom in the canonical order (Identity, Status,
-// Metadata, Events, Actions), each rendered full frame-width.
-// Collapsed zones (empty strings) are skipped so the stack is
-// contiguous.
-func renderDetailsStacked(width int, identity, status, metadata, events, actions string) string {
+// offsetRegion shifts a zone-local clickRegion into frame-absolute
+// coordinates by adding (dx, dy) to both corners.
+func offsetRegion(r clickRegion, dx, dy int) clickRegion {
+	r.X0 += dx
+	r.Y0 += dy
+	r.X1 += dx
+	r.Y1 += dy
+	return r
+}
+
+// renderDetailsStackedWithRegions composes the narrow-mode vertical
+// stack and offsets zone-local regions into frame-absolute coords.
+// Zones stack in canonical order (Identity, Status, Metadata, Events,
+// Actions); Y offsets are tracked as the stack grows. Because
+// Identity and Metadata are the only zones with regions in v1, only
+// those are offset and published.
+func renderDetailsStackedWithRegions(
+	m Model, _ int, bodyX, bodyY int,
+	identity, status, metadata, events, actions string,
+	identityRegs, metaRegs []clickRegion,
+) string {
 	zones := []string{identity}
+	y := 0
+
+	identityY := y
+	y += lipgloss.Height(identity)
+
 	if status != "" {
 		zones = append(zones, status)
+		y += lipgloss.Height(status)
 	}
+	metadataY := -1
 	if metadata != "" {
+		metadataY = y
 		zones = append(zones, metadata)
+		y += lipgloss.Height(metadata)
 	}
 	if events != "" {
 		zones = append(zones, events)
+		y += lipgloss.Height(events)
 	}
 	if actions != "" {
 		zones = append(zones, actions)
 	}
-	_ = width // reserved for future tightening; zones already render at width
+
+	var regions []clickRegion
+	for _, rg := range identityRegs {
+		regions = append(regions, offsetRegion(rg, bodyX, identityY+bodyY))
+	}
+	if metadataY >= 0 {
+		for _, rg := range metaRegs {
+			regions = append(regions, offsetRegion(rg, bodyX, metadataY+bodyY))
+		}
+	}
+	if m.detailsHitMap != nil {
+		*m.detailsHitMap = regions
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, zones...)
 }
 
@@ -130,78 +201,105 @@ const (
 )
 
 // renderIdentityZone renders the top-left Identity zone: Name, Type
-// (color-coded via the provider's TagStyle), and ARN. Width is the
-// preferred column width; the caller may pass a larger value for
-// narrow-mode full-width rendering.
-func renderIdentityZone(m Model, r core.Resource, width int) string {
+// (color-coded via the provider's TagStyle), and ARN. Name and ARN
+// are always marked clickable. Returns the rendered block plus
+// zone-local click regions (in cell coordinates relative to the
+// zone block's top-left corner) for the Name and ARN rows.
+func renderIdentityZone(m Model, r core.Resource, width int) (string, []clickRegion) {
 	var b strings.Builder
+	var regions []clickRegion
 
-	// Name row.
-	writeZoneField(&b, "Name", r.DisplayName)
+	// Name row — always clickable.
+	nameValue := styleClickable.Render(r.DisplayName)
+	regions = append(regions, zoneRowRegion(0, 6, nameValue, r.DisplayName, "Name"))
+	writeZoneFieldRaw(&b, "Name", nameValue)
 
-	// Type row — colored tag chip + descriptive suffix.
+	// Type row — colored tag chip + descriptive suffix, not clickable.
 	if p, ok := services.Get(r.Type); ok {
 		chip := p.TagStyle().Render(padTag(p.TagLabel()))
 		typeLine := chip + " " + typeDescription(r.Type)
-		writeZoneField(&b, "Type", typeLine)
+		writeZoneFieldRaw(&b, "Type", typeLine)
 	} else {
-		writeZoneField(&b, "Type", typeDescription(r.Type))
+		writeZoneFieldRaw(&b, "Type", typeDescription(r.Type))
 	}
 
-	// ARN row. While the lazy-details resolve is in-flight, show the
-	// same "…resolving" placeholder the pre-zoned layout used.
-	writeZoneField(&b, "ARN", detailsARN(r, m))
+	// ARN row — clickable unless resolution is in-flight.
+	arnValue := detailsARN(r, m)
+	if arnValue != "" && arnValue != "…resolving" {
+		styled := styleClickable.Render(arnValue)
+		regions = append(regions, zoneRowRegion(2, 6, styled, arnValue, "ARN"))
+		writeZoneFieldRaw(&b, "ARN", styled)
+	} else {
+		writeZoneFieldRaw(&b, "ARN", arnValue)
+	}
 
 	body := strings.TrimRight(b.String(), "\n")
-	return renderZoneBlock("IDENTITY", body, width)
+	return renderZoneBlock("IDENTITY", body, width), regions
 }
 
-// renderMetadataZone renders the top-right Metadata zone from the
-// provider's ZoneMetadata rows. Preserves the prior section-header
-// and blank-spacer semantics (empty label + empty value = blank
-// line; empty label + non-empty value = section header).
-func renderMetadataZone(m Model, rows []services.DetailRow, logFallback *services.DetailRow, width int) string {
+// renderMetadataZone renders the top-right Metadata zone. Clickable
+// rows are styled and tracked in the returned region slice (local
+// zone coordinates; caller offsets them into frame-absolute coords).
+func renderMetadataZone(m Model, rows []services.DetailRow, logFallback *services.DetailRow, width int) (string, []clickRegion) {
 	if len(rows) == 0 && logFallback == nil {
-		return ""
+		inFlight := m.lazyDetailsState[lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}] == lazyStateInFlight
+		if !inFlight {
+			return "", nil
+		}
+		body := styleRowDim.Render("resolving details…")
+		return renderZoneBlock("METADATA", body, width), nil
 	}
 
 	var b strings.Builder
-	inFlight := false
-	if p, ok := services.Get(m.detailsResource.Type); ok {
-		_ = p // suppress unused-in-else warning
-		inFlight = m.lazyDetailsState[lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}] == lazyStateInFlight
-	}
-
-	if len(rows) == 0 && inFlight {
-		// No rows yet but a resolve is running — placeholder.
-		b.WriteString(styleRowDim.Render("resolving details…"))
-	} else {
-		for _, row := range rows {
-			switch {
-			case row.Label == "" && row.Value == "":
-				b.WriteString("\n")
-			case row.Label == "":
-				b.WriteString(row.Value)
-				b.WriteString("\n")
-			default:
-				writeZoneFieldWide(&b, row.Label, row.Value)
+	var regions []clickRegion
+	y := 0 // line index within the zone body
+	for _, row := range rows {
+		switch {
+		case row.Label == "" && row.Value == "":
+			b.WriteString("\n")
+			y++
+		case row.Label == "":
+			b.WriteString(row.Value)
+			b.WriteString("\n")
+			y++
+		default:
+			value := row.Value
+			if row.Clickable {
+				clip := row.ClipboardValue
+				if clip == "" {
+					clip = stripANSI(row.Value)
+				}
+				value = styleClickable.Render(value)
+				regions = append(regions, zoneRowRegion(y, 11, value, clip, row.Label))
 			}
+			writeZoneFieldRawWide(&b, row.Label, value)
+			y++
 		}
-		if len(rows) == 0 && logFallback != nil {
-			writeZoneField(&b, logFallback.Label, logFallback.Value)
+	}
+	if len(rows) == 0 && logFallback != nil {
+		value := logFallback.Value
+		if logFallback.Clickable {
+			clip := logFallback.ClipboardValue
+			if clip == "" {
+				clip = stripANSI(logFallback.Value)
+			}
+			value = styleClickable.Render(value)
+			regions = append(regions, zoneRowRegion(y, 6, value, clip, logFallback.Label))
 		}
+		writeZoneFieldRaw(&b, logFallback.Label, value)
 	}
 
 	body := strings.TrimRight(b.String(), "\n")
-	return renderZoneBlock("METADATA", body, width)
+	return renderZoneBlock("METADATA", body, width), regions
 }
 
-// renderActionsZone renders the bottom-left Actions zone.
-func renderActionsZone(m Model, width int) string {
+// renderActionsZone renders the bottom-left Actions zone. Actions
+// are keyboard-driven — not clickable in v1.
+func renderActionsZone(m Model, width int) (string, []clickRegion) {
 	actions := ActionsFor(m.detailsResource.Type)
 	if len(actions) == 0 {
 		body := styleRowDim.Render("(no actions available)")
-		return renderZoneBlock("ACTIONS", body, width)
+		return renderZoneBlock("ACTIONS", body, width), nil
 	}
 
 	var b strings.Builder
@@ -219,15 +317,14 @@ func renderActionsZone(m Model, width int) string {
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("ACTIONS", b.String(), width)
+	return renderZoneBlock("ACTIONS", b.String(), width), nil
 }
 
-// renderStatusZone renders the top-center Status zone from rows the
-// provider tagged ZoneStatus. Returns "" (signaling collapse) when
-// there are no status rows.
-func renderStatusZone(rows []services.DetailRow, width int) string {
+// renderStatusZone renders the top-center Status zone. Status rows
+// are informational — never clickable — so no regions are produced.
+func renderStatusZone(rows []services.DetailRow, width int) (string, []clickRegion) {
 	if len(rows) == 0 {
-		return ""
+		return "", nil
 	}
 	var b strings.Builder
 	for i, row := range rows {
@@ -236,15 +333,14 @@ func renderStatusZone(rows []services.DetailRow, width int) string {
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("STATUS", b.String(), width)
+	return renderZoneBlock("STATUS", b.String(), width), nil
 }
 
-// renderEventsZone renders the bottom-right Events zone. Each row's
-// Value is rendered on its own line (Label is intentionally ignored;
-// event lines are preformatted strings from the provider).
-func renderEventsZone(rows []services.DetailRow, width int) string {
+// renderEventsZone renders the Events zone. Event rows are dim text
+// lines — not clickable in v1.
+func renderEventsZone(rows []services.DetailRow, width int) (string, []clickRegion) {
 	if len(rows) == 0 {
-		return ""
+		return "", nil
 	}
 	var b strings.Builder
 	for i, row := range rows {
@@ -253,7 +349,7 @@ func renderEventsZone(rows []services.DetailRow, width int) string {
 			b.WriteString("\n")
 		}
 	}
-	return renderZoneBlock("RECENT EVENTS", b.String(), width)
+	return renderZoneBlock("RECENT EVENTS", b.String(), width), nil
 }
 
 // renderZoneBlock wraps body in a rounded-border block with a dim
@@ -367,4 +463,41 @@ func padRightPlain(s string, n int) string {
 		return s
 	}
 	return s + strings.Repeat(" ", n-len(s))
+}
+
+// writeZoneFieldRaw is like writeZoneField but doesn't re-style the
+// value (caller may have wrapped it in styleClickable). Both variants
+// use the 6-char label column.
+func writeZoneFieldRaw(b *strings.Builder, label, styledValue string) {
+	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 6)))
+	b.WriteString(" ")
+	b.WriteString(styledValue)
+	b.WriteString("\n")
+}
+
+// writeZoneFieldRawWide uses the 11-char label column for the wider
+// Metadata-zone labels.
+func writeZoneFieldRawWide(b *strings.Builder, label, styledValue string) {
+	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 11)))
+	b.WriteString(" ")
+	b.WriteString(styledValue)
+	b.WriteString("\n")
+}
+
+// zoneRowRegion builds a zone-local clickRegion for a single label/value
+// row at line `y`, where the value begins at column `labelW + 1`
+// (label column + single space). The region's X1 is the cell after
+// the last rune of the plain-text value.
+func zoneRowRegion(y, labelW int, styledValue, clipboard, label string) clickRegion {
+	plain := stripANSI(styledValue)
+	valueCols := lipgloss.Width(plain)
+	x0 := labelW + 1
+	return clickRegion{
+		X0:        x0,
+		Y0:        y,
+		X1:        x0 + valueCols,
+		Y1:        y + 1,
+		Clipboard: clipboard,
+		Label:     label,
+	}
 }
