@@ -168,15 +168,54 @@ type ActionDef struct {
 	Label string
 }
 
-// DetailRow is one row in the Details panel's scrollable body.
-// Label is rendered dim at a fixed column width; Value is rendered
-// as-is (providers may embed lipgloss styling for color-coded
-// health signals). An empty Label with a non-empty Value renders as
-// a section header; both empty inserts a blank spacer row.
+// DetailRow is one row in the Details panel's body. Label is rendered
+// dim at a fixed column width; Value is rendered as-is (providers
+// may embed lipgloss styling for color-coded health signals).
+//
+// Within the Metadata zone an empty Label with a non-empty Value
+// renders as a section header; both empty inserts a blank spacer row.
+// The Status and Events zones ignore Label entirely and render each
+// row's Value on its own line.
 type DetailRow struct {
 	Label string
 	Value string
+
+	// Zone controls where this row renders in the zoned Details
+	// layout. The zero value (ZoneMetadata) keeps existing providers
+	// working unchanged.
+	Zone DetailZone
+
+	// Clickable marks this row as copyable-on-click. The Details
+	// renderer styles it with an underlined dim-blue foreground and
+	// registers a hit region in the mouse hit-map. Default false.
+	Clickable bool
+
+	// ClipboardValue is the exact string written to the clipboard
+	// when a Clickable row is clicked. Empty means: strip ANSI
+	// escapes from Value and copy that. Providers set this when the
+	// rendered Value contains formatting or suffixes the user
+	// doesn't want on their clipboard (e.g. colored status badges,
+	// "(Xd ago)" human-time suffixes).
+	ClipboardValue string
 }
+
+// DetailZone identifies which region of the zoned Details layout a
+// DetailRow belongs to. The zero value is ZoneMetadata so existing
+// providers that never assign a Zone keep rendering in the same
+// top-right key/value bag they did before the zoned refactor.
+type DetailZone int
+
+const (
+	// ZoneMetadata is the right-hand key/value bag. Default for all
+	// DetailRows that don't explicitly pick a zone.
+	ZoneMetadata DetailZone = iota
+	// ZoneStatus is the top-center prominent-state box. Collapses
+	// entirely when no provider rows target it.
+	ZoneStatus
+	// ZoneEvents is the bottom-right variable-length stream.
+	// Collapses when empty.
+	ZoneEvents
+)
 
 // BaseProvider is an embeddable zero-default that gives providers
 // sensible no-op implementations of the optional methods. Embed it
