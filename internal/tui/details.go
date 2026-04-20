@@ -99,35 +99,62 @@ func renderDetails(m Model, width, height int) string {
 
 	// Wide mode — compute zone widths from content. Identity,
 	// Status, and Actions size to their content (flex-initial);
-	// Metadata and Events get the remainder (flex: 1).
-	const gap = 2
-	identityW := measureBodyWidth(idBody) + 4
-	// Cap Identity at half the frame so a very long ARN can't
-	// starve Metadata of space.
-	if maxID := width / 2; identityW > maxID {
-		identityW = maxID
-	}
+	// Metadata and Events get the remainder (flex: 1). Identity is
+	// allowed to shrink from its natural size if otherwise Metadata
+	// would drop below its minimum budget.
+	const (
+		gap         = 2
+		metadataMin = 24
+		eventsMin   = 24
+		identityMin = 20
+		actionsMin  = 16
+	)
+	idNatural := measureBodyWidth(idBody) + 4
 
 	statusW := 0
 	if stBody != "" {
 		statusW = measureBodyWidth(stBody) + 4
 	}
 
-	actionsW := measureBodyWidth(acBody) + 4
-
-	metadataW := width - identityW - gap
+	// Top-row gap budget: 1 gap when Status is absent (identity ↔
+	// metadata), 2 gaps when Status is present (identity ↔ status ↔
+	// metadata).
+	topGaps := gap
 	if statusW > 0 {
-		metadataW -= statusW + gap
-	}
-	if metadataW < 24 {
-		metadataW = 24
+		topGaps = 2 * gap
 	}
 
+	// Identity can shrink to leave at least metadataMin for Metadata.
+	maxIdentity := width - statusW - metadataMin - topGaps
+	if maxIdentity < identityMin {
+		maxIdentity = identityMin
+	}
+	identityW := idNatural
+	if identityW > maxIdentity {
+		identityW = maxIdentity
+	}
+
+	metadataW := width - identityW - statusW - topGaps
+	if metadataW < metadataMin {
+		metadataW = metadataMin
+	}
+
+	// Actions uses its natural width but shrinks if Events would
+	// otherwise drop below eventsMin.
+	acNatural := measureBodyWidth(acBody) + 4
+	actionsW := acNatural
 	eventsW := 0
 	if evBody != "" {
+		maxActions := width - eventsMin - gap
+		if maxActions < actionsMin {
+			maxActions = actionsMin
+		}
+		if actionsW > maxActions {
+			actionsW = maxActions
+		}
 		eventsW = width - actionsW - gap
-		if eventsW < 24 {
-			eventsW = 24
+		if eventsW < eventsMin {
+			eventsW = eventsMin
 		}
 	}
 
