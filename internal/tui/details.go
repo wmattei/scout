@@ -97,65 +97,75 @@ func renderDetails(m Model, width, height int) string {
 			identityRegs, metaRegs)
 	}
 
-	// Wide mode — compute zone widths from content. Identity,
-	// Status, and Actions size to their content (flex-initial);
-	// Metadata and Events get the remainder (flex: 1). Identity is
-	// allowed to shrink from its natural size if otherwise Metadata
-	// would drop below its minimum budget.
+	// Wide mode — compute zone widths from content using a flex-
+	// like allocator. Each zone starts at an equal share of the
+	// frame, then zones whose natural content width is smaller
+	// give their excess back to zones that want more. Absolute
+	// minimum prevents a zone from collapsing below legibility.
 	const (
 		gap         = 2
-		metadataMin = 24
-		eventsMin   = 24
-		identityMin = 20
-		actionsMin  = 16
+		absoluteMin = 20
 	)
-	idNatural := measureBodyWidth(idBody) + 4
 
-	statusW := 0
-	if stBody != "" {
-		statusW = measureBodyWidth(stBody) + 4
+	// Top row participants.
+	topPresent := []bool{true, stBody != "", mdBody != ""} // identity, status, metadata
+	topMaxW := []int{
+		measureBodyWidth(idBody) + 4,
+		measureBodyWidth(stBody) + 4,
+		measureBodyWidth(mdBody) + 4,
+	}
+	topN := 0
+	for _, p := range topPresent {
+		if p {
+			topN++
+		}
+	}
+	topGaps := 0
+	if topN > 1 {
+		topGaps = (topN - 1) * gap
+	}
+	topBudget := width - topGaps
+
+	// Collect present zones, call flex, then scatter back.
+	topMins := make([]int, 0, topN)
+	topMaxs := make([]int, 0, topN)
+	for i, present := range topPresent {
+		if present {
+			topMins = append(topMins, absoluteMin)
+			topMaxs = append(topMaxs, topMaxW[i])
+		}
+	}
+	topAllocs := distributeFlex(topBudget, topMins, topMaxs)
+
+	identityW, statusW, metadataW := 0, 0, 0
+	idx := 0
+	for i, present := range topPresent {
+		if !present {
+			continue
+		}
+		switch i {
+		case 0:
+			identityW = topAllocs[idx]
+		case 1:
+			statusW = topAllocs[idx]
+		case 2:
+			metadataW = topAllocs[idx]
+		}
+		idx++
 	}
 
-	// Top-row gap budget: 1 gap when Status is absent (identity ↔
-	// metadata), 2 gaps when Status is present (identity ↔ status ↔
-	// metadata).
-	topGaps := gap
-	if statusW > 0 {
-		topGaps = 2 * gap
-	}
-
-	// Identity can shrink to leave at least metadataMin for Metadata.
-	maxIdentity := width - statusW - metadataMin - topGaps
-	if maxIdentity < identityMin {
-		maxIdentity = identityMin
-	}
-	identityW := idNatural
-	if identityW > maxIdentity {
-		identityW = maxIdentity
-	}
-
-	metadataW := width - identityW - statusW - topGaps
-	if metadataW < metadataMin {
-		metadataW = metadataMin
-	}
-
-	// Actions uses its natural width but shrinks if Events would
-	// otherwise drop below eventsMin.
-	acNatural := measureBodyWidth(acBody) + 4
-	actionsW := acNatural
+	// Bottom row participants: Actions is always present; Events
+	// only if event rows exist.
+	actionsW := 0
 	eventsW := 0
 	if evBody != "" {
-		maxActions := width - eventsMin - gap
-		if maxActions < actionsMin {
-			maxActions = actionsMin
-		}
-		if actionsW > maxActions {
-			actionsW = maxActions
-		}
-		eventsW = width - actionsW - gap
-		if eventsW < eventsMin {
-			eventsW = eventsMin
-		}
+		bottomBudget := width - gap
+		botAllocs := distributeFlex(bottomBudget,
+			[]int{absoluteMin, absoluteMin},
+			[]int{measureBodyWidth(acBody) + 4, measureBodyWidth(evBody) + 4})
+		actionsW, eventsW = botAllocs[0], botAllocs[1]
+	} else {
+		actionsW = measureBodyWidth(acBody) + 4
 	}
 
 	// Render with natural heights first to measure the tallest top
@@ -497,6 +507,93 @@ func measureBodyWidth(body string) int {
 		}
 	}
 	return max
+}
+
+// distributeFlex allocates `budget` cells across N zones using a
+// CSS-flex-like model: every zone starts at an equal share of the
+// budget; zones whose natural max is smaller than the equal share
+// give their excess back to a pool; zones whose equal share is below
+// their max pull from that pool to grow up to their max. Absolute
+// minimums are enforced last — a zone won't shrink below its min
+// even if the budget is tight (overflow/line-wrap is acceptable).
+//
+// maxs[i] is the zone's natural content width (preferred ceiling);
+// mins[i] is the absolute floor. len(mins) must equal len(maxs).
+// Returns one allocation per zone in the same order.
+func distributeFlex(budget int, mins, maxs []int) []int {
+	n := len(mins)
+	if n == 0 {
+		return nil
+	}
+	allocs := make([]int, n)
+
+	// Pass 1: start at equal share, cap at each zone's max.
+	equalShare := budget / n
+	for i := 0; i < n; i++ {
+		w := equalShare
+		if w > maxs[i] {
+			w = maxs[i]
+		}
+		allocs[i] = w
+	}
+
+	// Pass 2: redistribute slack. Zones currently below their max
+	// compete for any remaining budget; small share goes round-robin
+	// so the allocation is fair when the pool doesn't split cleanly.
+	for {
+		used := 0
+		for _, a := range allocs {
+			used += a
+		}
+		slack := budget - used
+		if slack <= 0 {
+			break
+		}
+		growable := 0
+		for i := 0; i < n; i++ {
+			if allocs[i] < maxs[i] {
+				growable++
+			}
+		}
+		if growable == 0 {
+			break
+		}
+		share := slack / growable
+		if share == 0 {
+			share = 1
+		}
+		progress := false
+		for i := 0; i < n && slack > 0; i++ {
+			if allocs[i] >= maxs[i] {
+				continue
+			}
+			add := share
+			if add > maxs[i]-allocs[i] {
+				add = maxs[i] - allocs[i]
+			}
+			if add > slack {
+				add = slack
+			}
+			if add > 0 {
+				allocs[i] += add
+				slack -= add
+				progress = true
+			}
+		}
+		if !progress {
+			break
+		}
+	}
+
+	// Pass 3: enforce absolute minimums. A zone below its floor is
+	// bumped up — if this pushes the total above budget the overflow
+	// is tolerated (the zone would otherwise be unusable).
+	for i := 0; i < n; i++ {
+		if allocs[i] < mins[i] {
+			allocs[i] = mins[i]
+		}
+	}
+	return allocs
 }
 
 // renderZoneBlock wraps body in a rounded-border block with a dim
