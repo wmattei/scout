@@ -474,22 +474,25 @@ func measureBodyWidth(body string) int {
 
 // renderZoneBlock wraps body in a rounded-border block with a dim
 // header label in the top-left of the border. width is the total
-// visible width including the 2-column border; content inside gets
-// width-4 (2 border + 2 padding columns). When height > 0, the
-// block is padded vertically so the total rendered height (border
-// included) equals that value; use 0 to size naturally to content.
+// visible width including the border; lipgloss's Width() argument
+// is `width - 2` because Width() sets the rendered width excluding
+// the border but INCLUDING any padding. The inner content area
+// inside the border and the 1-col padding on each side is therefore
+// `width - 4` cells wide. When height > 0, the block is padded
+// vertically so the total rendered height (border included) equals
+// that value; use 0 to size naturally to content.
 func renderZoneBlock(header, body string, width, height int) string {
-	innerWidth := width - 4
-	if innerWidth < 1 {
-		innerWidth = 1
+	styleW := width - 2 // total width minus the 2 border columns
+	if styleW < 1 {
+		styleW = 1
 	}
-	style := styleZoneBorder.Width(innerWidth)
+	style := styleZoneBorder.Width(styleW)
 	if height > 0 {
-		innerHeight := height - 2 // 2 border rows
-		if innerHeight < 1 {
-			innerHeight = 1
+		styleH := height - 2 // total height minus the 2 border rows
+		if styleH < 1 {
+			styleH = 1
 		}
-		style = style.Height(innerHeight)
+		style = style.Height(styleH)
 	}
 	block := style.Render(body)
 	// Overlay the header in the top border. The top border is the
