@@ -201,6 +201,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inFlightLabel = "updating…"
 			m.pendingEditorAction = editorActionNone
 			return m, ssmUpdateCmd(m.awsCtx, m.pendingEditorResource, content)
+		case editorActionSecretUpdate:
+			m.inFlight = true
+			m.inFlightLabel = "updating…"
+			m.pendingEditorAction = editorActionNone
+			return m, secretUpdateCmd(m.awsCtx, m.pendingEditorResource, content)
 		}
 		m.pendingEditorAction = editorActionNone
 		return m, nil

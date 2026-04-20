@@ -16,6 +16,7 @@ const (
 	editorActionNone editorAction = iota
 	editorActionLambdaInvoke
 	editorActionSSMUpdate
+	editorActionSecretUpdate
 )
 
 // msgEditorClosed is emitted after the user saves and exits $EDITOR.

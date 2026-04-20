@@ -66,6 +66,8 @@ func parseType(s string) core.ResourceType {
 		return core.RTypeLambdaFunction
 	case "ssm_parameter":
 		return core.RTypeSSMParameter
+	case "secrets_manager_secret":
+		return core.RTypeSecretsManagerSecret
 	default:
 		return core.RTypeBucket
 	}

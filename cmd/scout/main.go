@@ -34,6 +34,7 @@ import (
 	_ "github.com/wmattei/scout/internal/awsctx/ecs"
 	_ "github.com/wmattei/scout/internal/awsctx/lambda"
 	_ "github.com/wmattei/scout/internal/awsctx/s3"
+	_ "github.com/wmattei/scout/internal/awsctx/secretsmanager"
 	_ "github.com/wmattei/scout/internal/awsctx/ssm"
 )
 
@@ -233,6 +234,7 @@ Service scopes (type in TUI):
   td:, task:, taskdef:                  ECS task definitions
   lambda:, fn:, functions:              Lambda functions
   ssm:, param:, params:, parameter:     SSM parameters
+  secrets:, secret:, sm:, sec:          Secrets Manager secrets
 
 Key bindings:
   ↑/↓         Navigate results

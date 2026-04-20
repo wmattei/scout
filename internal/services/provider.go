@@ -215,6 +215,12 @@ const (
 	// ZoneEvents is the bottom-right variable-length stream.
 	// Collapses when empty.
 	ZoneEvents
+	// ZoneValue is the full-width middle row sitting between the
+	// top row (Identity/Status/Metadata) and the bottom row
+	// (Actions/Events). Reserved for a single large value — secret
+	// bodies, decoded blobs — where the dense key/value layout of
+	// Metadata would cramp readability. Collapses when empty.
+	ZoneValue
 )
 
 // BaseProvider is an embeddable zero-default that gives providers

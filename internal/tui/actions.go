@@ -53,8 +53,10 @@ var actionExecuteRegistry = map[string]ActionExecute{
 	"download":     execDownload,
 	"preview":      execPreview,
 	"run":          execLambdaRun,
-	"copy-value":   execSSMCopyValue,
-	"update-value": execSSMUpdateValue,
+	"copy-value":          execSSMCopyValue,
+	"update-value":        execSSMUpdateValue,
+	"copy-secret-value":   execSecretCopyValue,
+	"update-secret-value": execSecretUpdateValue,
 }
 
 // ActionsFor returns the ordered action list for a resource type. It looks

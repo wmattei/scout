@@ -42,7 +42,7 @@ func renderDetails(m Model, width, height int) string {
 	// Partition provider rows by zone. Providers that pre-date the
 	// zoned layout all emit ZoneMetadata (the zero value), so this
 	// partition is a no-op for them.
-	var statusRows, metadataRows, eventRows []services.DetailRow
+	var statusRows, metadataRows, eventRows, valueRows []services.DetailRow
 	var logRow *services.DetailRow
 	if p, ok := services.Get(r.Type); ok {
 		lazy := m.lazyDetailsFor(r)
@@ -53,6 +53,8 @@ func renderDetails(m Model, width, height int) string {
 				statusRows = append(statusRows, row)
 			case ZoneEvents:
 				eventRows = append(eventRows, row)
+			case ZoneValue:
+				valueRows = append(valueRows, row)
 			default: // ZoneMetadata + zero value
 				metadataRows = append(metadataRows, row)
 			}
@@ -72,6 +74,7 @@ func renderDetails(m Model, width, height int) string {
 	mdBody, metaRegs := buildMetadataBody(m, metadataRows, logRow)
 	evBody := buildEventsBody(eventRows)
 	acBody := buildActionsBody(m)
+	vBody, valueRow := buildValueBody(valueRows)
 
 	// Narrow mode: each zone renders at full frame width, stacked
 	// vertically, natural heights.
@@ -85,6 +88,10 @@ func renderDetails(m Model, width, height int) string {
 		if mdBody != "" {
 			metadataBlock = renderZoneBlock("METADATA", mdBody, width, 0)
 		}
+		valueBlock := ""
+		if vBody != "" {
+			valueBlock = renderZoneBlock("VALUE", vBody, width, 0)
+		}
 		eventsBlock := ""
 		if evBody != "" {
 			eventsBlock = renderZoneBlock("RECENT EVENTS", evBody, width, 0)
@@ -93,8 +100,8 @@ func renderDetails(m Model, width, height int) string {
 		const zoneBodyOffsetX = 2
 		const zoneBodyOffsetY = 1
 		return renderDetailsStackedWithRegions(m, width, zoneBodyOffsetX, zoneBodyOffsetY,
-			identityBlock, statusBlock, metadataBlock, eventsBlock, actionsBlock,
-			identityRegs, metaRegs)
+			identityBlock, statusBlock, metadataBlock, valueBlock, eventsBlock, actionsBlock,
+			identityRegs, metaRegs, valueRow)
 	}
 
 	// Wide mode — compute zone widths from content using a flex-
@@ -198,6 +205,41 @@ func renderDetails(m Model, width, height int) string {
 		metadataBlock = renderZoneBlock("METADATA", mdBody, metadataW, topHeight)
 	}
 
+	// Value zone — full-width middle row between top and bottom.
+	// Capped at half of what's left after the top row so the bottom
+	// row (Actions, Events) always has usable vertical room. When the
+	// raw body exceeds the cap we truncate visible lines and surface
+	// an explanatory suffix — click-to-copy still carries the full
+	// original value.
+	var valueBlock string
+	valueHeight := 0
+	if vBody != "" {
+		vBodyRendered := vBody
+		available := height - topHeight - 2 // -2 for the two separator rows
+		// Reserve at least 5 rows for the bottom row so Actions stays
+		// usable even when the value is enormous.
+		maxValueHeight := available - 5
+		if maxValueHeight < 5 {
+			maxValueHeight = 5
+		}
+		natural := strings.Count(vBody, "\n") + 1 + 2 // +2 for border rows
+		if natural <= maxValueHeight {
+			valueHeight = natural
+		} else {
+			valueHeight = maxValueHeight
+			bodyLines := strings.Split(vBody, "\n")
+			keep := valueHeight - 2 - 1 // border rows + truncation marker
+			if keep < 1 {
+				keep = 1
+			}
+			if keep < len(bodyLines) {
+				vBodyRendered = strings.Join(bodyLines[:keep], "\n") + "\n" +
+					styleRowDim.Render("  … (truncated — click to copy full value)")
+			}
+		}
+		valueBlock = renderZoneBlock("VALUE", vBodyRendered, width, valueHeight)
+	}
+
 	// Bottom row — Actions + Events (if any). Stretch both to fill
 	// the remaining body budget so their borders close on the bottom
 	// divider row. Fall back to natural height when the budget is
@@ -212,6 +254,9 @@ func renderDetails(m Model, width, height int) string {
 		naturalBottom = lipgloss.Height(evNat)
 	}
 	bottomHeight := height - topHeight - 1 // -1 for the blank separator row
+	if valueHeight > 0 {
+		bottomHeight -= valueHeight + 1 // value row + its separator
+	}
 	if bottomHeight < naturalBottom {
 		bottomHeight = naturalBottom
 	}
@@ -255,6 +300,30 @@ func renderDetails(m Model, width, height int) string {
 		regions = append(regions, offsetRegion(rg, metadataX+zoneBodyOffsetX, 0+zoneBodyOffsetY))
 	}
 
+	// Value zone click region spans the full inner body when the
+	// value row opted into click-to-copy. The zone starts one blank
+	// separator row below the top row's last border line.
+	if valueBlock != "" && valueRow != nil && valueRow.Clickable {
+		clip := valueRow.ClipboardValue
+		if clip == "" {
+			clip = stripANSI(valueRow.Value)
+		}
+		valueY := topHeight + 1 // +1 for the blank separator row
+		innerW := width - 2
+		innerH := valueHeight - 2
+		if innerH < 1 {
+			innerH = 1
+		}
+		regions = append(regions, clickRegion{
+			X0:        0 + zoneBodyOffsetX,
+			Y0:        valueY + zoneBodyOffsetY,
+			X1:        innerW,
+			Y1:        valueY + zoneBodyOffsetY + innerH,
+			Clipboard: clip,
+			Label:     valueRow.Label,
+		})
+	}
+
 	// Publish regions so Update's mouse handler can match clicks.
 	if m.detailsHitMap != nil {
 		*m.detailsHitMap = regions
@@ -265,7 +334,12 @@ func renderDetails(m Model, width, height int) string {
 		bottomRow = lipgloss.JoinHorizontal(lipgloss.Top, actionsBlock, "  ", eventsBlock)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, topRow, "", bottomRow)
+	parts := []string{topRow, ""}
+	if valueBlock != "" {
+		parts = append(parts, valueBlock, "")
+	}
+	parts = append(parts, bottomRow)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // offsetRegion shifts a zone-local clickRegion into frame-absolute
@@ -285,9 +359,10 @@ func offsetRegion(r clickRegion, dx, dy int) clickRegion {
 // Identity and Metadata are the only zones with regions in v1, only
 // those are offset and published.
 func renderDetailsStackedWithRegions(
-	m Model, _ int, bodyX, bodyY int,
-	identity, status, metadata, events, actions string,
+	m Model, frameW int, bodyX, bodyY int,
+	identity, status, metadata, value, events, actions string,
 	identityRegs, metaRegs []clickRegion,
+	valueRow *services.DetailRow,
 ) string {
 	zones := []string{identity}
 	y := 0
@@ -304,6 +379,12 @@ func renderDetailsStackedWithRegions(
 		metadataY = y
 		zones = append(zones, metadata)
 		y += lipgloss.Height(metadata)
+	}
+	valueY := -1
+	if value != "" {
+		valueY = y
+		zones = append(zones, value)
+		y += lipgloss.Height(value)
 	}
 	if events != "" {
 		zones = append(zones, events)
@@ -322,6 +403,25 @@ func renderDetailsStackedWithRegions(
 			regions = append(regions, offsetRegion(rg, bodyX, metadataY+bodyY))
 		}
 	}
+	if valueY >= 0 && valueRow != nil && valueRow.Clickable {
+		clip := valueRow.ClipboardValue
+		if clip == "" {
+			clip = stripANSI(valueRow.Value)
+		}
+		innerW := frameW - 2
+		innerH := lipgloss.Height(value) - 2
+		if innerH < 1 {
+			innerH = 1
+		}
+		regions = append(regions, clickRegion{
+			X0:        bodyX,
+			Y0:        valueY + bodyY,
+			X1:        innerW,
+			Y1:        valueY + bodyY + innerH,
+			Clipboard: clip,
+			Label:     valueRow.Label,
+		})
+	}
 	if m.detailsHitMap != nil {
 		*m.detailsHitMap = regions
 	}
@@ -336,6 +436,7 @@ const (
 	ZoneMetadata = services.ZoneMetadata
 	ZoneStatus   = services.ZoneStatus
 	ZoneEvents   = services.ZoneEvents
+	ZoneValue    = services.ZoneValue
 )
 
 // ----------------------------------------------------------------------
@@ -431,8 +532,7 @@ func buildMetadataBody(m Model, rows []services.DetailRow, logFallback *services
 				value = styleClickable.Render(value)
 				regions = append(regions, zoneRowRegion(y, 11, value, clip, row.Label))
 			}
-			writeZoneFieldRawWide(&b, row.Label, value)
-			y++
+			y += writeZoneFieldRawWide(&b, row.Label, value)
 		}
 	}
 	if len(rows) == 0 && logFallback != nil {
@@ -449,6 +549,19 @@ func buildMetadataBody(m Model, rows []services.DetailRow, logFallback *services
 	}
 
 	return strings.TrimRight(b.String(), "\n"), regions
+}
+
+// buildValueBody returns the Value zone body (typically a single
+// large payload — secret value, decoded blob) plus a pointer to the
+// originating row so the wide-mode renderer can publish a whole-zone
+// click region when the row opts into click-to-copy. Returns ("", nil)
+// when no provider row targeted ZoneValue.
+func buildValueBody(rows []services.DetailRow) (string, *services.DetailRow) {
+	if len(rows) == 0 {
+		return "", nil
+	}
+	row := rows[0]
+	return row.Value, &row
 }
 
 // buildEventsBody returns the Events zone body, or "" when no event
@@ -723,12 +836,23 @@ func writeZoneFieldRaw(b *strings.Builder, label, styledValue string) {
 }
 
 // writeZoneFieldRawWide uses the 11-char label column for the wider
-// Metadata-zone labels.
-func writeZoneFieldRawWide(b *strings.Builder, label, styledValue string) {
+// Metadata-zone labels. When styledValue contains embedded newlines
+// each continuation line is indented to column 12 so the wrapped text
+// stays visually aligned with the first line's value. Returns the
+// number of lines written so the caller can advance its y cursor
+// accurately for hit-map bookkeeping.
+func writeZoneFieldRawWide(b *strings.Builder, label, styledValue string) int {
+	lines := strings.Split(styledValue, "\n")
 	b.WriteString(styleDetailsLabel.Render(padRightPlain(label, 11)))
 	b.WriteString(" ")
-	b.WriteString(styledValue)
+	b.WriteString(lines[0])
 	b.WriteString("\n")
+	for _, line := range lines[1:] {
+		b.WriteString(strings.Repeat(" ", 12))
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return len(lines)
 }
 
 // zoneRowRegion builds a zone-local clickRegion for a single label/value
