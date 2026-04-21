@@ -20,6 +20,12 @@ const (
 	// modeSwitcher shows the profile/region overlay. Key events are
 	// routed to updateSwitcher; Esc restores the previous mode.
 	modeSwitcher
+
+	// modeExecutionDetails shows one SSM Automation execution —
+	// header + inputs + per-step tiles with Lambda step logs inline.
+	// Polls while the execution is non-terminal. Entered from
+	// modeDetails by activating a selectable event row on a runbook.
+	modeExecutionDetails
 )
 
 // String returns a short debug name for the mode.
@@ -33,6 +39,8 @@ func (m Mode) String() string {
 		return "tail-logs"
 	case modeSwitcher:
 		return "switcher"
+	case modeExecutionDetails:
+		return "execution-details"
 	default:
 		return "unknown"
 	}

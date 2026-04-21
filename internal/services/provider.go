@@ -197,6 +197,19 @@ type DetailRow struct {
 	// doesn't want on their clipboard (e.g. colored status badges,
 	// "(Xd ago)" human-time suffixes).
 	ClipboardValue string
+
+	// Selectable marks this row as keyboard-navigable. The Details
+	// handler lets the user Tab into the row's zone and press Enter
+	// to activate — typically to drill into a sub-view keyed by
+	// ActivationID. Only honoured in ZoneEvents today.
+	Selectable bool
+
+	// ActivationID is passed to the per-type event activation
+	// handler when Enter is pressed on a Selectable row. Opaque
+	// identifier — the handler decides what it means (e.g. the
+	// Automation provider encodes the execution ID here so the
+	// details handler can transition into modeExecutionDetails).
+	ActivationID string
 }
 
 // DetailZone identifies which region of the zoned Details layout a

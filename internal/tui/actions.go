@@ -57,6 +57,7 @@ var actionExecuteRegistry = map[string]ActionExecute{
 	"update-value":        execSSMUpdateValue,
 	"copy-secret-value":   execSecretCopyValue,
 	"update-secret-value": execSecretUpdateValue,
+	"run-automation":      execAutomationRun,
 }
 
 // ActionsFor returns the ordered action list for a resource type. It looks

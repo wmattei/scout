@@ -72,7 +72,7 @@ func renderDetails(m Model, width, height int) string {
 	idBody, identityRegs := buildIdentityBody(m, r)
 	stBody := buildStatusBody(statusRows)
 	mdBody, metaRegs := buildMetadataBody(m, metadataRows, logRow)
-	evBody := buildEventsBody(eventRows)
+	evBody := buildEventsBody(eventRows, m.eventSel, m.detailsFocus == detailsFocusEvents)
 	acBody := buildActionsBody(m)
 	vBody, valueRow := buildValueBody(valueRows)
 
@@ -133,6 +133,17 @@ func renderDetails(m Model, width, height int) string {
 	}
 	topBudget := width - topGaps
 
+	// Flex anchor: the rightmost present zone absorbs slack so the
+	// top row always spans the full frame width. Without this, a
+	// row whose zones all reach their natural content width leaves
+	// an empty gutter on the right that looks like a layout bug.
+	for i := len(topPresent) - 1; i >= 0; i-- {
+		if topPresent[i] {
+			topMaxW[i] = topBudget
+			break
+		}
+	}
+
 	// Collect present zones, call flex, then scatter back.
 	topMins := make([]int, 0, topN)
 	topMaxs := make([]int, 0, topN)
@@ -162,17 +173,19 @@ func renderDetails(m Model, width, height int) string {
 	}
 
 	// Bottom row participants: Actions is always present; Events
-	// only if event rows exist.
+	// only if event rows exist. Events flexes to fill row width;
+	// when Events is absent, Actions fills the full frame so the
+	// row doesn't leave an empty right-side gutter.
 	actionsW := 0
 	eventsW := 0
 	if evBody != "" {
 		bottomBudget := width - gap
 		botAllocs := distributeFlex(bottomBudget,
 			[]int{absoluteMin, absoluteMin},
-			[]int{measureBodyWidth(acBody) + 4, measureBodyWidth(evBody) + 4})
+			[]int{measureBodyWidth(acBody) + 4, bottomBudget})
 		actionsW, eventsW = botAllocs[0], botAllocs[1]
 	} else {
-		actionsW = measureBodyWidth(acBody) + 4
+		actionsW = width
 	}
 
 	// Render with natural heights first to measure the tallest top
@@ -565,13 +578,26 @@ func buildValueBody(rows []services.DetailRow) (string, *services.DetailRow) {
 }
 
 // buildEventsBody returns the Events zone body, or "" when no event
-// rows exist.
-func buildEventsBody(rows []services.DetailRow) string {
+// rows exist. When any row is Selectable and focused=true, the row at
+// selectedSelIdx is prefixed with a selection arrow so the user sees
+// where Enter will fire. Non-selectable rows and all rows when
+// focused=false render with a two-space left pad so the alignment
+// stays consistent across focus changes.
+func buildEventsBody(rows []services.DetailRow, selectedSelIdx int, focused bool) string {
 	if len(rows) == 0 {
 		return ""
 	}
 	var b strings.Builder
+	selIdx := 0
 	for i, row := range rows {
+		prefix := "  "
+		if row.Selectable {
+			if focused && selIdx == selectedSelIdx {
+				prefix = styleSelIndi.Render("▸ ")
+			}
+			selIdx++
+		}
+		b.WriteString(prefix)
 		b.WriteString(row.Value)
 		if i < len(rows)-1 {
 			b.WriteString("\n")

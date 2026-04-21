@@ -17,6 +17,7 @@ const (
 	editorActionLambdaInvoke
 	editorActionSSMUpdate
 	editorActionSecretUpdate
+	editorActionAutomationRun
 )
 
 // msgEditorClosed is emitted after the user saves and exits $EDITOR.

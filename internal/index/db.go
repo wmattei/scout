@@ -259,6 +259,8 @@ func parseType(s string) core.ResourceType {
 		return core.RTypeSSMParameter
 	case "secrets_manager_secret":
 		return core.RTypeSecretsManagerSecret
+	case "ssm_automation_document":
+		return core.RTypeSSMAutomationDocument
 	default:
 		return core.RTypeBucket // defensive default; should never happen
 	}

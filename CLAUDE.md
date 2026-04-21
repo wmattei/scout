@@ -224,6 +224,7 @@ Each service has its own subpackage with adapters + a `provider_*.go` file:
 | `lambda/` | lambdaFunctionProvider | `lambda:`, `fn:` | ListFunctions, GetFunction, InvokeFunction |
 | `ssm/` | ssmParameterProvider | `ssm:`, `param:` | ListParameters, GetParameter, PutParameter |
 | `secretsmanager/` | secretProvider | `secrets:`, `secret:`, `sm:`, `sec:` | ListSecrets, GetSecretValue, PutSecretValue |
+| `automation/` | documentProvider | `auto:`, `automation:`, `runbook:` | ListDocuments, DescribeDocument, ListExecutions, StartExecution |
 | `logs/` | (no provider — shared utility) | — | StartLiveTail, GetRecentEvents |
 
 ### `internal/index/`

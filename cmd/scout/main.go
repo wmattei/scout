@@ -31,6 +31,7 @@ import (
 
 	// Provider registrations — blank imports trigger each package's
 	// init() which calls services.Register for its providers.
+	_ "github.com/wmattei/scout/internal/awsctx/automation"
 	_ "github.com/wmattei/scout/internal/awsctx/ecs"
 	_ "github.com/wmattei/scout/internal/awsctx/lambda"
 	_ "github.com/wmattei/scout/internal/awsctx/s3"
@@ -235,6 +236,7 @@ Service scopes (type in TUI):
   lambda:, fn:, functions:              Lambda functions
   ssm:, param:, params:, parameter:     SSM parameters
   secrets:, secret:, sm:, sec:          Secrets Manager secrets
+  auto:, automation:, runbook:          SSM Automation documents
 
 Key bindings:
   ↑/↓         Navigate results

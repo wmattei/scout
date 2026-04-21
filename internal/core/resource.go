@@ -20,6 +20,7 @@ const (
 	RTypeLambdaFunction
 	RTypeSSMParameter
 	RTypeSecretsManagerSecret
+	RTypeSSMAutomationDocument
 )
 
 // String returns a short machine name used in the SQLite schema's `type`
@@ -42,6 +43,8 @@ func (r ResourceType) String() string {
 		return "ssm_parameter"
 	case RTypeSecretsManagerSecret:
 		return "secrets_manager_secret"
+	case RTypeSSMAutomationDocument:
+		return "ssm_automation_document"
 	default:
 		return "unknown"
 	}

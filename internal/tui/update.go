@@ -56,6 +56,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tailViewport.Width = m.width
 		m.tailViewport.Height = vpHeight
+		resizeExecutionViewport(&m)
 		return m, nil
 
 	case tea.MouseMsg:
@@ -96,6 +97,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTail(msg)
 		case modeSwitcher:
 			return m.updateSwitcher(msg)
+		case modeExecutionDetails:
+			return updateExecutionDetails(m, msg)
 		default:
 			return m.updateSearch(msg)
 		}
@@ -142,8 +145,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inFlightLabel = ""
 		if msg.err != nil {
 			m.toast = newErrorToast(msg.toast)
+			// Persist the error into the current resource's lazy
+			// data so the Details render surfaces it prominently
+			// — toasts are transient, this keeps the reason
+			// visible until the next successful action or refetch.
+			if m.mode == modeDetails {
+				key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+				if m.lazyDetails[key] == nil {
+					m.lazyDetails[key] = map[string]string{}
+				}
+				m.lazyDetails[key]["actionError"] = msg.toast
+			}
 		} else if msg.success {
 			m.toast = newSuccessToast(msg.toast)
+			// Clear any prior action error on success so the
+			// stale banner doesn't linger after a recovery run.
+			if m.mode == modeDetails {
+				key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+				if m.lazyDetails[key] != nil {
+					delete(m.lazyDetails[key], "actionError")
+				}
+			}
 		} else {
 			m.toast = newToast(msg.toast, 4*time.Second)
 		}
@@ -206,6 +228,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inFlightLabel = "updating…"
 			m.pendingEditorAction = editorActionNone
 			return m, secretUpdateCmd(m.awsCtx, m.pendingEditorResource, content)
+		case editorActionAutomationRun:
+			if !json.Valid(content) {
+				m.toast = newErrorToast("invalid JSON payload — run cancelled")
+				m.pendingEditorAction = editorActionNone
+				return m, nil
+			}
+			m.inFlight = true
+			m.inFlightLabel = "running…"
+			m.pendingEditorAction = editorActionNone
+			return m, automationRunCmd(m.awsCtx, m.pendingEditorResource, content)
 		}
 		m.pendingEditorAction = editorActionNone
 		return m, nil
@@ -224,6 +256,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lazyDetails[msg.key] = msg.details
 		m.lazyDetailsState[msg.key] = lazyStateResolved
 		return m, schedulePollIfNeeded(m, msg.key)
+
+	case msgAutomationStarted:
+		// A fresh Run returned an execution ID — clear inFlight,
+		// show the success toast, and jump into the execution
+		// details page so the user watches the run progress in real
+		// time. The document's lazy cache is wiped so re-entering
+		// Details after Esc picks up the new execution row.
+		m.inFlight = false
+		m.inFlightLabel = ""
+		m.toast = newSuccessToast(fmt.Sprintf("execution started: %s", shortExecID(msg.execID)))
+		m.detailsResource = msg.docResource
+		key := lazyDetailKey{Type: msg.docResource.Type, Key: msg.docResource.Key}
+		if m.lazyDetails[key] != nil {
+			delete(m.lazyDetails[key], "actionError")
+		}
+		delete(m.lazyDetails, key)
+		m.lazyDetailsState[key] = lazyStateInFlight
+		nm, cmd := enterExecutionDetails(m, msg.execID)
+		var refetchCmd tea.Cmd
+		if p, ok := services.Get(msg.docResource.Type); ok {
+			refetchCmd = resolveLazyDetailsCmd(m.awsCtx, p, msg.docResource)
+		}
+		if refetchCmd != nil {
+			return nm, tea.Batch(cmd, refetchCmd)
+		}
+		return nm, cmd
+
+	case msgExecutionFetched:
+		return handleExecutionFetched(m, msg)
+
+	case msgExecutionStepLogs:
+		return handleExecutionStepLogs(m, msg)
+
+	case msgExecutionPollTick:
+		return handleExecutionPollTick(m, msg)
 
 	case msgPollDetails:
 		// A scheduled poll tick fired. Re-fire ResolveDetails only if
@@ -468,6 +535,8 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	actions := ActionsFor(m.detailsResource.Type)
+	events := selectableEventRows(m)
+	hasSelectableEvents := len(events) > 0
 	switch msg.String() {
 	case "ctrl+p":
 		m.switcher = newSwitcher(m.awsCtx.Profile, m.awsCtx.Region)
@@ -480,18 +549,61 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = modeSearch
 		m.actionSel = 0
+		m.detailsFocus = detailsFocusActions
+		m.eventSel = 0
+		return m, nil
+	case "tab":
+		// Tab cycles focus between Actions and Events, but only
+		// when the Events zone actually has selectable rows. Zones
+		// without navigable content (most providers) just stay on
+		// Actions — pressing Tab is a no-op.
+		if !hasSelectableEvents {
+			return m, nil
+		}
+		if m.detailsFocus == detailsFocusActions {
+			m.detailsFocus = detailsFocusEvents
+			if m.eventSel >= len(events) {
+				m.eventSel = 0
+			}
+		} else {
+			m.detailsFocus = detailsFocusActions
+		}
 		return m, nil
 	case "up":
+		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
+			if m.eventSel > 0 {
+				m.eventSel--
+			}
+			return m, nil
+		}
 		if m.actionSel > 0 {
 			m.actionSel--
 		}
 		return m, nil
 	case "down":
+		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
+			if m.eventSel < len(events)-1 {
+				m.eventSel++
+			}
+			return m, nil
+		}
 		if m.actionSel < len(actions)-1 {
 			m.actionSel++
 		}
 		return m, nil
 	case "enter":
+		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
+			if m.eventSel >= len(events) {
+				return m, nil
+			}
+			row := events[m.eventSel]
+			activator, ok := eventActivationRegistry[m.detailsResource.Type]
+			if !ok {
+				m.toast = newToast("no activation handler for this resource type", 2*time.Second)
+				return m, nil
+			}
+			return activator(m, row.ActivationID)
+		}
 		return m.runAction(actions, m.actionSel)
 	case "f":
 		_, toast := m.toggleFavoriteForResource(m.detailsResource)

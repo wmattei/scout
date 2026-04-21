@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/awsctx/automation"
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
@@ -129,7 +130,34 @@ type Model struct {
 	pendingEditorAction   editorAction
 	pendingEditorPath     string
 	pendingEditorResource core.Resource
+
+	// Details keyboard focus. In modeDetails the focus toggles
+	// between the Actions zone (default) and the Events zone when
+	// it contains selectable rows (e.g. runbook execution history).
+	// eventSel is the selected index within the current zone's
+	// selectable-row list.
+	detailsFocus int
+	eventSel     int
+
+	// Execution-details mode state — populated when entering a
+	// runbook execution. executionPollEpoch invalidates in-flight
+	// polls after Esc/mode switches so stale msgExecutionFetched
+	// messages don't overwrite fresh state.
+	executionID             string
+	executionDocument       core.Resource
+	executionData           *automation.ExecutionDetails
+	executionStepLogs       map[string][]string
+	executionStepSel        int
+	executionError          string
+	executionPollEpoch      int
+	executionGraceRemaining int // extra ticks to poll after terminal for log catch-up
+	executionViewport       viewport.Model
 }
+
+const (
+	detailsFocusActions = 0
+	detailsFocusEvents  = 1
+)
 
 // NewModel constructs the initial model for the bubbletea program.
 func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activity *awsctx.Activity, prefsDB *prefs.DB, prefsState *prefs.State) Model {
@@ -153,6 +181,8 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		lazyDetails:         make(map[lazyDetailKey]map[string]string),
 		lazyDetailsState:    make(map[lazyDetailKey]lazyDetailState),
 		tailViewport:        viewport.New(80, 10),
+		executionViewport:   viewport.New(80, 10),
+		executionStepLogs:   map[string][]string{},
 		serviceScopeFetched: make(map[string]struct{}),
 		detailsHitMap:       new([]clickRegion),
 	}
