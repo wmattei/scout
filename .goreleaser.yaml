@@ -60,19 +60,21 @@ release:
   draft: false
   prerelease: auto
 
-# Uncomment once you create a `wmattei/homebrew-tap` repo and add a
-# HOMEBREW_TAP_GITHUB_TOKEN secret with `repo` scope to this repo.
-#
-# brews:
-#   - name: scout
-#     repository:
-#       owner: wmattei
-#       name: homebrew-tap
-#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-#     homepage: https://github.com/wmattei/scout
-#     description: Interactive terminal TUI for navigating AWS infrastructure
-#     license: MIT
-#     test: |
-#       system "#{bin}/scout", "--help"
-#     install: |
-#       bin.install "scout"
+brews:
+  - name: scout
+    repository:
+      owner: wmattei
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/wmattei/scout
+    description: Interactive terminal TUI for navigating AWS infrastructure
+    license: MIT
+    test: |
+      system "#{bin}/scout", "--help"
+    install: |
+      bin.install "scout"
+    # Skip the auto-formula update for pre-release tags so betas/rcs
+    # don't clobber the stable formula. GoReleaser still publishes the
+    # GitHub Release and binaries for pre-releases; users can install
+    # those manually.
+    skip_upload: auto
