@@ -114,7 +114,7 @@ In your provider package, expose an exported `Register()` that calls
 func Register() { services.Register(&myServiceProvider{}) }
 ```
 
-Then add a call in `cmd/scout/providers.go`:
+Then add a call in `internal/awsctx/providers/providers.go`:
 
 ```go
 myservice.Register()
