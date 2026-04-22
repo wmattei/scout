@@ -1,0 +1,274 @@
+package tui
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/search"
+	"github.com/wmattei/scout/internal/services"
+)
+
+// updateSearch handles key events while in modeSearch.
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "up":
+		if m.selected > 0 {
+			m.selected--
+		}
+		return m, nil
+	case "down":
+		visible := m.visibleSearchResults()
+		if m.selected < len(visible)-1 {
+			m.selected++
+		}
+		return m, nil
+	case "enter":
+		visible := m.visibleSearchResults()
+		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
+			return m, nil
+		}
+		m.detailsResource = visible[m.selected].Resource
+		m.actionSel = 0
+		m.mode = modeDetails
+		// Record the visit for recents. Swallow errors — a failed prefs
+		// write shouldn't block entering Details; worst case is this
+		// resource doesn't show up in Recents next launch.
+		if m.prefs != nil {
+			_ = m.prefs.MarkVisited(m.prefsState, m.detailsResource)
+		}
+		// Generic lazy-detail resolution. Every provider that has a
+		// non-trivial ResolveDetails participates.
+		key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
+		if p, ok := services.Get(m.detailsResource.Type); ok {
+			if m.lazyDetailsState[key] == lazyStateNone || p.AlwaysRefresh() {
+				if p.AlwaysRefresh() {
+					// Drop any stale cached map so DetailRows sees empty
+					// lazy and renders the "resolving…" placeholder.
+					delete(m.lazyDetails, key)
+				}
+				m.lazyDetailsState[key] = lazyStateInFlight
+				return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
+			}
+		}
+		return m, nil
+	case "tab":
+		return m.handleTab()
+	case "ctrl+p":
+		m.switcher = newSwitcher(m.awsCtx.Profile, m.awsCtx.Region)
+		m.switcher.Show()
+		m.prevMode = modeSearch
+		m.mode = modeSwitcher
+		return m, nil
+	case "alt+backspace", "ctrl+w":
+		// Option+Backspace on macOS (and Ctrl+W elsewhere) deletes the
+		// last path segment instead of the whole word. The default
+		// textinput behaviour is word-aware by spaces, which is useless
+		// for S3 breadcrumbs — we split on "/" instead.
+		m.input.SetValue(deleteLastPathSegment(m.input.Value()))
+		m.input.CursorEnd()
+		return m.recomputeResults(nil)
+	case "ctrl+r", "esc":
+		return m, nil
+	case "f":
+		visible := m.visibleSearchResults()
+		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
+			return m, nil
+		}
+		_, toast := m.toggleFavoriteForResource(visible[m.selected].Resource)
+		m.toast = toast
+		return m, nil
+	}
+
+	// Let the textinput consume the keystroke, then recompute.
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m.recomputeResults(cmd)
+}
+
+// handleTab implements Tab drill-in. When a bucket or folder row is
+// selected, Tab replaces the input value with that row's full path and
+// appends a trailing `/` so the scope advances on the next recompute.
+// For leaf rows Tab replaces with the row's name without a trailing
+// separator.
+func (m Model) handleTab() (tea.Model, tea.Cmd) {
+	visible := m.visibleSearchResults()
+	if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
+		return m, nil
+	}
+	row := visible[m.selected].Resource
+
+	scope := search.ParseScope(m.input.Value())
+	newInput := row.DisplayName
+	if p, ok := services.Get(row.Type); ok {
+		newInput = p.TabComplete(scope, row)
+	}
+	m.input.SetValue(newInput)
+	m.input.CursorEnd()
+	return m.recomputeResults(nil)
+}
+
+// recomputeResults recomputes the result list based on the current input
+// and returns the combined tea.Cmd for text-input update and any
+// follow-up scoped-search command.
+func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	scope := search.ParseScope(m.input.Value())
+
+	// Service-scope mode ("s3:", "ecs:", "td:" etc.). First time the
+	// session sees a given alias, fire a live fetch; subsequent
+	// keystrokes under the same alias just re-filter in memory.
+	if scope.HasService {
+		m.results = partitionByFavorites(
+			search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults),
+			m.prefsState,
+		)
+		m.scopedResults = nil
+		m.scopedQuery = ""
+		m.clampSelected()
+		if _, already := m.serviceScopeFetched[scope.ServiceAlias]; already {
+			return m, cmd
+		}
+		m.serviceScopeFetched[scope.ServiceAlias] = struct{}{}
+		refresh := refreshServiceCmd(m.awsCtx, m.db, m.memory, scope.Service)
+		if cmd != nil {
+			return m, tea.Batch(cmd, refresh)
+		}
+		return m, refresh
+	}
+
+	if scope.IsTopLevel() {
+		m.results = partitionByFavorites(computeResults(m.input.Value(), m.memory), m.prefsState)
+		m.scopedResults = nil
+		m.scopedQuery = ""
+		m.clampSelected()
+		return m, cmd
+	}
+
+	// Scoped mode: read the SQLite cache synchronously for an instant
+	// first paint, then fire the live fetch as a tea.Cmd to augment
+	// and persist.
+	m.results = nil
+	m.scopedResults = readScopedCache(m.db, scope)
+	m.scopedQuery = ""
+	m.clampSelected()
+	scoped := scopedSearchCmd(m.awsCtx, m.db, m.input.Value())
+	if cmd != nil {
+		return m, tea.Batch(cmd, scoped)
+	}
+	return m, scoped
+}
+
+// deleteLastPathSegment trims the trailing segment of a breadcrumb input,
+// treating "/" as the segment delimiter. Used by Option+Backspace and
+// Ctrl+W so the user can walk back up the S3 path one level at a time.
+//
+// Examples:
+//
+//	"bucket/logs/2026/01/"    -> "bucket/logs/2026/"
+//	"bucket/logs/2026/01/fil" -> "bucket/logs/2026/01/"
+//	"bucket/"                 -> ""
+//	"bucket"                  -> ""
+//	""                        -> ""
+func deleteLastPathSegment(input string) string {
+	s := strings.TrimSuffix(input, "/")
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		return s[:i+1]
+	}
+	return ""
+}
+
+// schedulePollIfNeeded returns a tea.Tick that will fire msgPollDetails
+// after the provider's PollingInterval if the user is still in
+// modeDetails looking at the resource that just resolved. Returns nil
+// when polling is disabled, the user has left Details, or the resolved
+// resource doesn't match the currently-displayed one.
+func schedulePollIfNeeded(m Model, key lazyDetailKey) tea.Cmd {
+	if m.mode != modeDetails {
+		return nil
+	}
+	if key.Type != m.detailsResource.Type || key.Key != m.detailsResource.Key {
+		return nil
+	}
+	p, ok := services.Get(key.Type)
+	if !ok {
+		return nil
+	}
+	interval := p.PollingInterval()
+	if interval <= 0 {
+		return nil
+	}
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return msgPollDetails{key: key}
+	})
+}
+
+// readScopedCache does a synchronous SQLite read of bucket_contents for
+// the given scope and returns prefix-matched results ready to drop into
+// m.scopedResults.
+func readScopedCache(db *index.DB, scope search.Scope) []search.Result {
+	if scope.Bucket == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	cached, err := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
+	if err != nil {
+		return nil
+	}
+	return search.Prefix(scope.Leaf, cached, MaxDisplayedResults)
+}
+
+// isLoadingScoped reports whether an S3 drill-in search is in flight.
+// Service-scope mode is explicitly excluded — its loading affordance
+// is the status-bar spinner.
+func (m Model) isLoadingScoped() bool {
+	scope := search.ParseScope(m.input.Value())
+	return scope.Bucket != "" && m.scopedQuery != m.input.Value()
+}
+
+// visibleSearchResults returns whichever result list is currently active
+// so arrow keys and Enter operate on the same set the user is seeing.
+//
+// Selection priorities:
+//  1. S3 drill-in mode (scope.Bucket != "") → m.scopedResults.
+//  2. Empty input + at least one favorite or recent → home rows.
+//  3. Otherwise → m.results.
+func (m Model) visibleSearchResults() []search.Result {
+	scope := search.ParseScope(m.input.Value())
+	if scope.Bucket != "" {
+		return m.scopedResults
+	}
+	if homeActive(m) {
+		return homeRows(m)
+	}
+	return m.results
+}
+
+// clampSelected keeps the selected index within the visible list bounds.
+func (m *Model) clampSelected() {
+	n := len(m.visibleSearchResults())
+	if n == 0 {
+		m.selected = 0
+		return
+	}
+	if m.selected >= n {
+		m.selected = n - 1
+	}
+	if m.selected < 0 {
+		m.selected = 0
+	}
+}
+
+// computeResults returns fuzzy match results for a TOP-LEVEL query, or
+// an empty slice if the query is empty.
+func computeResults(query string, mem *index.Memory) []search.Result {
+	if query == "" {
+		return nil
+	}
+	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
+}
