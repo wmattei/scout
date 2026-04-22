@@ -82,6 +82,7 @@ func (secretProvider) Actions() []services.ActionDef {
 	return []services.ActionDef{
 		{ID: "open", Label: "Open in Browser"},
 		{ID: "copy-arn", Label: "Copy ARN"},
+		{ID: "reveal-secret-value", Label: "Reveal Value"},
 		{ID: "copy-secret-value", Label: "Copy Value"},
 		{ID: "update-secret-value", Label: "Update Value"},
 	}
@@ -143,7 +144,13 @@ func (secretProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 		})
 	} else {
 		rawValue := lazy["value"]
-		rendered := renderSecretValue(rawValue)
+		revealed := lazy[SensitiveRevealedKey] == "true"
+		var rendered string
+		if revealed {
+			rendered = renderSecretValue(rawValue)
+		} else {
+			rendered = styleDim.Render("•••••••••••• <hidden — use Reveal Value>")
+		}
 		rows = append(rows, services.DetailRow{
 			Zone:           services.ZoneValue,
 			Label:          "Value",

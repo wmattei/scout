@@ -13,6 +13,40 @@ import (
 	"github.com/wmattei/scout/internal/core"
 )
 
+// execSecretRevealValue toggles whether the resolved secret value is
+// displayed unmasked in the Details view. The toggle state lives in the
+// lazyDetails map under SensitiveRevealedKey and is wiped whenever the
+// lazy map is refetched — so re-entering Details or refreshing always
+// re-hides the value.
+func execSecretRevealValue(m Model) (Model, tea.Cmd) {
+	r := m.detailsResource
+	if r.Type != core.RTypeSecretsManagerSecret {
+		m.toast = newToast("Reveal Value is only available for Secrets Manager secrets", 3*time.Second)
+		return m, nil
+	}
+	lazy := m.lazyDetailsFor(r)
+	if lazy == nil {
+		if m.lazyDetailsState[lazyDetailKey{Type: r.Type, Key: r.Key}] == lazyStateInFlight {
+			m.toast = newToast("details still resolving — try again", 2*time.Second)
+		} else {
+			m.toast = newToast("secret value not yet resolved — try again", 2*time.Second)
+		}
+		return m, nil
+	}
+	if lazy["binary"] == "true" {
+		m.toast = newErrorToast("secret is binary — view via the AWS console")
+		return m, nil
+	}
+	if lazy[awssm.SensitiveRevealedKey] == "true" {
+		delete(lazy, awssm.SensitiveRevealedKey)
+		m.toast = newToast("value hidden", 2*time.Second)
+	} else {
+		lazy[awssm.SensitiveRevealedKey] = "true"
+		m.toast = newToast("value revealed — will re-hide on refresh", 3*time.Second)
+	}
+	return m, nil
+}
+
 // execSecretCopyValue copies the resolved secret value to the clipboard.
 // Binary-only secrets surface an informational toast instead.
 func execSecretCopyValue(m Model) (Model, tea.Cmd) {

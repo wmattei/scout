@@ -55,6 +55,7 @@ var actionExecuteRegistry = map[string]ActionExecute{
 	"run":          execLambdaRun,
 	"copy-value":          execSSMCopyValue,
 	"update-value":        execSSMUpdateValue,
+	"reveal-secret-value": execSecretRevealValue,
 	"copy-secret-value":   execSecretCopyValue,
 	"update-secret-value": execSecretUpdateValue,
 	"run-automation":      execAutomationRun,
