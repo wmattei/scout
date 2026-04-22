@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/wmattei/scout/internal/awsctx"
+	"github.com/wmattei/scout/internal/version"
 )
 
 // spinnerFrames is a simple braille-dot spinner. Index % len picks a frame.
@@ -16,6 +17,14 @@ func spinnerFrame(tick int) string { return spinnerFrames[tick%len(spinnerFrames
 // and activity indicator. width is the full frame width; the returned
 // string is exactly one line tall and exactly `width` columns wide.
 func renderStatus(width int, profile, region, account string, activity awsctx.ActivitySnapshot, tick int) string {
+	// Dev banner: only rendered for non-release builds so users running
+	// GoReleaser-produced binaries see a clean status bar. The pill sits
+	// at the leading edge so it's the first thing the eye catches.
+	leadingBanner := ""
+	if version.IsDev() {
+		leadingBanner = styleDevBanner.Render("DEV BUILD") + " "
+	}
+
 	left := fmt.Sprintf("profile=%s  region=%s", profile, region)
 	if account != "" {
 		left += fmt.Sprintf("  acct=%s", account)
@@ -33,11 +42,11 @@ func renderStatus(width int, profile, region, account string, activity awsctx.Ac
 		right = fmt.Sprintf("%s %s", styleSpinner.Render(spinnerFrame(tick)), op)
 	}
 
-	gap := width - visibleWidth(left) - visibleWidth(right) - 2 // -2 for padding
+	gap := width - visibleWidth(leadingBanner) - visibleWidth(left) - visibleWidth(right) - 2 // -2 for padding
 	if gap < 1 {
 		gap = 1
 	}
-	line := " " + left + strings.Repeat(" ", gap) + right + " "
+	line := " " + leadingBanner + left + strings.Repeat(" ", gap) + right + " "
 	return styleStatusBar.Width(width).Render(line)
 }
 

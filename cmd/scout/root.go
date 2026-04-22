@@ -16,6 +16,7 @@ import (
 	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/tui"
+	"github.com/wmattei/scout/internal/version"
 )
 
 // rootCmd builds the root command tree. The root's RunE launches the
@@ -25,7 +26,7 @@ func rootCmd() *cobra.Command {
 		Use:          "scout",
 		Short:        "Interactive AWS resource navigator",
 		Long:         rootLongHelp,
-		Version:      Version,
+		Version:      version.Current,
 		SilenceUsage: true, // keep errors terse; usage only on bad flags
 		RunE: func(cmd *cobra.Command, args []string) error {
 			closeLog := debuglog.Init()
@@ -123,7 +124,7 @@ func runTUI() (err error) {
 	debuglog.Logger().Info("starting tui",
 		"profile", awsCtx.Profile,
 		"region", awsCtx.Region,
-		"version", Version,
+		"version", version.Current,
 	)
 
 	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState)
@@ -155,7 +156,7 @@ func writeCrashLog(panicVal interface{}, stack []byte) error {
 		return err
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "scout %s crash log\n", Version)
+	fmt.Fprintf(f, "scout %s crash log\n", version.Current)
 	fmt.Fprintf(f, "panic: %v\n\n", panicVal)
 	fmt.Fprintf(f, "stack:\n%s\n", stack)
 	return nil

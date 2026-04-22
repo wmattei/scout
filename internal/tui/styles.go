@@ -57,6 +57,15 @@ var (
 		Padding(0, 1)
 	styleDivider = lipgloss.NewStyle().Foreground(ac("#A8A8A8", "#303030"))
 
+	// styleDevBanner renders the "DEV" pill that the status bar shows
+	// when the running binary is a non-release build. High-contrast
+	// amber on both light and dark so it is impossible to miss.
+	styleDevBanner = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ac("#FFFFFF", "#1A1A2E")).
+			Background(ac("#D75F00", "#FFAF00")).
+			Padding(0, 1)
+
 	// Zoned Details layout.
 	styleZoneBorder = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

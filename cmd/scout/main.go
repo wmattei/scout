@@ -10,12 +10,12 @@
 //
 //	SCOUT_DEBUG=1  — enable the file-backed debug log at
 //	                 $XDG_CACHE_HOME/scout/debug.log
+//
+// The running version is injected at build time into
+// internal/version.Current by GoReleaser.
 package main
 
 import "os"
-
-// Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "dev"
 
 func main() {
 	if err := rootCmd().Execute(); err != nil {
