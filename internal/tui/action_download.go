@@ -24,7 +24,7 @@ func execDownload(m Model) (Model, tea.Cmd) {
 		m.toast = newToast("download is only available for S3 objects", 3*time.Second)
 		return m, nil
 	}
-	bucket := r.Meta["bucket"]
+	bucket := r.Meta[awss3.MetaBucket]
 	if bucket == "" {
 		m.toast = newToast("object missing bucket metadata", 3*time.Second)
 		return m, nil

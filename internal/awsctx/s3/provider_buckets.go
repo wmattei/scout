@@ -84,18 +84,18 @@ func (bucketProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context, r 
 		return nil, err
 	}
 	out := map[string]string{
-		"versioning":   d.Versioning,
-		"encryption":   d.Encryption,
-		"publicAccess": d.PublicAccess,
+		MetaVersioning:   d.Versioning,
+		MetaEncryption:   d.Encryption,
+		MetaPublicAccess: d.PublicAccess,
 	}
 	// Pass through CreatedAt from the adapter — it was captured at
 	// ListBuckets time and is authoritative without an extra call.
-	if ts := r.Meta["createdAt"]; ts != "" {
-		out["createdAt"] = ts
+	if ts := r.Meta[MetaCreatedAt]; ts != "" {
+		out[MetaCreatedAt] = ts
 	}
 	if len(d.Tags) > 0 {
 		if b, err := json.Marshal(d.Tags); err == nil {
-			out["tags"] = string(b)
+			out[MetaTags] = string(b)
 		}
 	}
 	return out, nil
@@ -104,7 +104,7 @@ func (bucketProvider) ResolveDetails(ctx context.Context, ac *awsctx.Context, r 
 // DetailRows renders the bucket details panel: region, created,
 // versioning, encryption, public access, and first 5 tags.
 func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []services.DetailRow {
-	if lazy == nil || lazy["versioning"] == "" {
+	if lazy == nil || lazy[MetaVersioning] == "" {
 		return nil
 	}
 
@@ -112,17 +112,17 @@ func (bucketProvider) DetailRows(r core.Resource, lazy map[string]string) []serv
 		{Label: "Region", Value: r.Meta[MetaRegion]},
 	}
 
-	if ts := lazy["createdAt"]; ts != "" {
+	if ts := lazy[MetaCreatedAt]; ts != "" {
 		rows = append(rows, services.DetailRow{Label: "Created", Value: styleDim.Render(format.TimeAge(ts))})
 	}
 
 	rows = append(rows,
-		services.DetailRow{Label: "Versioning", Value: colorVersioning(lazy["versioning"])},
-		services.DetailRow{Label: "Encryption", Value: lazy["encryption"]},
-		services.DetailRow{Label: "Public", Value: colorPublicAccess(lazy["publicAccess"])},
+		services.DetailRow{Label: "Versioning", Value: colorVersioning(lazy[MetaVersioning])},
+		services.DetailRow{Label: "Encryption", Value: lazy[MetaEncryption]},
+		services.DetailRow{Label: "Public", Value: colorPublicAccess(lazy[MetaPublicAccess])},
 	)
 
-	if tags := format.DecodeJSONSlice(lazy["tags"]); len(tags) > 0 {
+	if tags := format.DecodeJSONSlice(lazy[MetaTags]); len(tags) > 0 {
 		rows = append(rows, services.DetailRow{}) // spacer
 		rows = append(rows, services.DetailRow{Value: styleHeader.Render("Tags")})
 		for _, t := range tags {

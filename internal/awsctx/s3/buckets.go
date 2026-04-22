@@ -63,7 +63,7 @@ func ListBuckets(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOption
 				MetaRegion: ac.Region,
 			}
 			if b.CreationDate != nil {
-				meta["createdAt"] = fmt.Sprintf("%d", b.CreationDate.Unix())
+				meta[MetaCreatedAt] = fmt.Sprintf("%d", b.CreationDate.Unix())
 			}
 			resources = append(resources, core.Resource{
 				Type:        core.RTypeBucket,

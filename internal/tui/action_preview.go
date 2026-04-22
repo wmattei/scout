@@ -32,7 +32,7 @@ func execPreview(m Model) (Model, tea.Cmd) {
 		m.toast = newToast("unsupported preview format (jpg, png, txt, csv only)", 4*time.Second)
 		return m, nil
 	}
-	bucket := r.Meta["bucket"]
+	bucket := r.Meta[awss3.MetaBucket]
 	if bucket == "" {
 		m.toast = newToast("object missing bucket metadata", 3*time.Second)
 		return m, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/wmattei/scout/internal/awsctx/s3"
 	"github.com/wmattei/scout/internal/core"
 )
 
@@ -46,10 +47,10 @@ func (d *DB) UpsertBucketContents(ctx context.Context, bucket string, rs []core.
 			isFolder = 1
 		}
 		var size, mtime interface{}
-		if s, ok := r.Meta["size"]; ok {
+		if s, ok := r.Meta[s3.MetaSize]; ok {
 			size = s
 		}
-		if m, ok := r.Meta["mtime"]; ok {
+		if m, ok := r.Meta[s3.MetaMtime]; ok {
 			mtime = m
 		}
 		if _, err := stmt.ExecContext(ctx, bucket, r.Key, isFolder, size, mtime); err != nil {
@@ -96,7 +97,7 @@ func (d *DB) QueryBucketContents(ctx context.Context, bucket, prefix string) ([]
 		}
 		r := core.Resource{
 			Key:  key,
-			Meta: map[string]string{"bucket": bucket},
+			Meta: map[string]string{s3.MetaBucket: bucket},
 		}
 		if isFolder == 1 {
 			r.Type = core.RTypeFolder
@@ -105,10 +106,10 @@ func (d *DB) QueryBucketContents(ctx context.Context, bucket, prefix string) ([]
 			r.Type = core.RTypeObject
 			r.DisplayName = lastSegment(key)
 			if size != "" {
-				r.Meta["size"] = size
+				r.Meta[s3.MetaSize] = size
 			}
 			if mtime != "" {
-				r.Meta["mtime"] = mtime
+				r.Meta[s3.MetaMtime] = mtime
 			}
 		}
 		out = append(out, r)

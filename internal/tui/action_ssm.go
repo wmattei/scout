@@ -89,7 +89,7 @@ func ssmUpdateCmd(ac *awsctx.Context, r core.Resource, content []byte) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		paramType := r.Meta["type"]
+		paramType := r.Meta[awsssm.MetaType]
 		if paramType == "" {
 			paramType = "String"
 		}
