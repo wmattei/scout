@@ -39,7 +39,7 @@ import (
 	_ "github.com/wmattei/scout/internal/awsctx/ssm"
 )
 
-const Version = "0.0.0"
+var Version = "dev"
 
 func main() {
 	// Subcommand dispatch.

@@ -1,0 +1,78 @@
+version: 2
+
+project_name: scout
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: scout
+    main: ./cmd/scout
+    binary: scout
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - id: scout
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: wmattei
+    name: scout
+  draft: false
+  prerelease: auto
+
+# Uncomment once you create a `wmattei/homebrew-tap` repo and add a
+# HOMEBREW_TAP_GITHUB_TOKEN secret with `repo` scope to this repo.
+#
+# brews:
+#   - name: scout
+#     repository:
+#       owner: wmattei
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     homepage: https://github.com/wmattei/scout
+#     description: Interactive terminal TUI for navigating AWS infrastructure
+#     license: MIT
+#     test: |
+#       system "#{bin}/scout", "--help"
+#     install: |
+#       bin.install "scout"
