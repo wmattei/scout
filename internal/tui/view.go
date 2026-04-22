@@ -70,6 +70,8 @@ func (m Model) View() string {
 	case modeExecutionDetails:
 		body = renderExecutionDetails(m, m.width, bodyHeight)
 		body = padBlock(body, bodyHeight)
+	case modeOnboarding:
+		body = renderOnboarding(m, m.width, bodyHeight)
 	default:
 		body = m.renderSearchBody(bodyHeight)
 	}

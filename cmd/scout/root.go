@@ -88,38 +88,53 @@ func runTUI() (err error) {
 
 	ctx := context.Background()
 
-	awsCtx, err := awsctx.Resolve(ctx)
-	if err != nil {
-		return err
-	}
-
-	activity := awsctx.NewActivity()
-	activity.Attach(&awsCtx.Cfg)
-
 	// Tell the index layer which types are top-level so it can build the
-	// unified search snapshot.
+	// unified search snapshot. Runs regardless of AWS resolve outcome so
+	// the switcher commit flow can populate the memory index after the
+	// user picks a profile.
 	seedTopLevelTypes()
 
-	db, err := index.Open(awsCtx.Profile, awsCtx.Region)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
+	activity := awsctx.NewActivity()
 
-	memory := index.NewMemory()
-	cached, err := db.LoadAll(ctx)
-	if err != nil {
-		return err
-	}
-	memory.Load(cached)
+	awsCtx, resolveErr := awsctx.Resolve(ctx)
+	var (
+		db         *index.DB
+		memory     = index.NewMemory()
+		prefsDB    *prefs.DB
+		prefsState *prefs.State
+	)
 
-	prefsDB, prefsState, err := prefs.Open(awsCtx.Profile, awsCtx.Region)
-	if err != nil {
-		// Non-fatal: the TUI handles nil prefs gracefully.
-		debuglog.Logger().Warn("prefs unavailable", "err", err)
-		prefsDB, prefsState = nil, nil
+	if resolveErr == nil {
+		activity.Attach(&awsCtx.Cfg)
+
+		db, err = index.Open(awsCtx.Profile, awsCtx.Region)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		cached, err := db.LoadAll(ctx)
+		if err != nil {
+			return err
+		}
+		memory.Load(cached)
+
+		prefsDB, prefsState, err = prefs.Open(awsCtx.Profile, awsCtx.Region)
+		if err != nil {
+			// Non-fatal: the TUI handles nil prefs gracefully.
+			debuglog.Logger().Warn("prefs unavailable", "err", err)
+			prefsDB, prefsState = nil, nil
+		}
+		defer prefsDB.Close()
+	} else {
+		// AWS context didn't resolve — we still launch the TUI so the
+		// user lands in an onboarding flow instead of seeing a raw
+		// stderr error. Downstream code paths guard on nil db / empty
+		// profile; the switcher's commit flow reopens everything once
+		// the user picks a profile + region.
+		awsCtx = &awsctx.Context{}
+		debuglog.Logger().Warn("aws resolve failed", "err", resolveErr)
 	}
-	defer prefsDB.Close()
 
 	debuglog.Logger().Info("starting tui",
 		"profile", awsCtx.Profile,
@@ -128,6 +143,9 @@ func runTUI() (err error) {
 	)
 
 	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState)
+	if resolveErr != nil {
+		model = model.WithOnboarding(resolveErr.Error(), awsctx.ListProfiles())
+	}
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, runErr := program.Run(); runErr != nil {
 		return fmt.Errorf("tui: %w", runErr)

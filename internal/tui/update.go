@@ -69,6 +69,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSwitcher(msg)
 		case modeExecutionDetails:
 			return updateExecutionDetails(m, msg)
+		case modeOnboarding:
+			return m.updateOnboarding(msg)
 		default:
 			return m.updateSearch(msg)
 		}

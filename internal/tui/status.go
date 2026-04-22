@@ -26,9 +26,15 @@ func renderStatus(width int, profile, region, account string, activity awsctx.Ac
 		leadingBanner = styleDevBanner.Render(label) + " "
 	}
 
-	left := fmt.Sprintf("profile=%s  region=%s", profile, region)
-	if account != "" {
-		left += fmt.Sprintf("  acct=%s", account)
+	left := ""
+	if profile == "" && region == "" {
+		// Onboarding / pre-resolve state — no AWS context yet.
+		left = styleRowDim.Render("no AWS context — Ctrl+P to pick a profile")
+	} else {
+		left = fmt.Sprintf("profile=%s  region=%s", profile, region)
+		if account != "" {
+			left += fmt.Sprintf("  acct=%s", account)
+		}
 	}
 
 	right := ""

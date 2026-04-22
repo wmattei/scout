@@ -26,6 +26,13 @@ const (
 	// Polls while the execution is non-terminal. Entered from
 	// modeDetails by activating a selectable event row on a runbook.
 	modeExecutionDetails
+
+	// modeOnboarding is the fallback screen shown when scout starts
+	// without a resolvable AWS context. If the user has profiles
+	// configured we invite them to press Ctrl+P and pick one; if not,
+	// we show setup instructions so they can finish configuring AWS
+	// without leaving the TUI.
+	modeOnboarding
 )
 
 // String returns a short debug name for the mode.
@@ -41,6 +48,8 @@ func (m Mode) String() string {
 		return "switcher"
 	case modeExecutionDetails:
 		return "execution-details"
+	case modeOnboarding:
+		return "onboarding"
 	default:
 		return "unknown"
 	}

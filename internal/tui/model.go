@@ -142,6 +142,18 @@ type Model struct {
 	// Execution-details mode state — populated when entering a
 	// runbook execution. See executionState for field docs.
 	exec executionState
+
+	// onboardingReason is the AWS-resolve error message shown on the
+	// onboarding screen. Only populated when the TUI is launched in
+	// modeOnboarding because awsctx.Resolve failed. Empty in every
+	// other mode.
+	onboardingReason string
+
+	// onboardingProfiles lists ~/.aws/{config,credentials} profile
+	// names at startup, used by the onboarding screen to decide
+	// whether to prompt "Ctrl+P to pick a profile" or the full AWS
+	// setup instructions.
+	onboardingProfiles []string
 }
 
 // executionState bundles every field that is only meaningful while the
@@ -194,6 +206,21 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		serviceScopeFetched: make(map[string]struct{}),
 		detailsHitMap:       new([]clickRegion),
 	}
+}
+
+// WithOnboarding returns a copy of the model ready to render the
+// onboarding screen instead of the search bar. Used by cmd/scout/root
+// when awsctx.Resolve fails at startup so the TUI can recover the
+// user instead of exiting with an error. `reason` is the resolve
+// error's message, shown verbatim on the onboarding screen.
+// `profiles` is the output of awsctx.ListProfiles — pass the live
+// list so the onboarding screen can branch between "pick a profile"
+// and "set up AWS first".
+func (m Model) WithOnboarding(reason string, profiles []string) Model {
+	m.mode = modeOnboarding
+	m.onboardingReason = reason
+	m.onboardingProfiles = profiles
+	return m
 }
 
 // Init is called once when the program starts. The TUI no longer fires
