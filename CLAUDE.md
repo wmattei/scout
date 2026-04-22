@@ -104,12 +104,25 @@ The provider file implements `services.Provider`. Embed `services.BaseProvider` 
 | `PollingInterval()` | override for live data | Default 0 (no polling) |
 | `AlwaysRefresh()` | override for live data | Default false |
 
-### 4. Register via blank import (1 line)
+### 4. Expose a `Register()` function and wire it
 
-`cmd/scout/main.go`:
+In your provider package, expose an exported `Register()` that calls
+`services.Register(&yourProvider{})` for every provider in the package:
+
 ```go
-_ "github.com/wmattei/scout/internal/awsctx/myservice"
+// internal/awsctx/myservice/register.go
+func Register() { services.Register(&myServiceProvider{}) }
 ```
+
+Then add a call in `cmd/scout/providers.go`:
+
+```go
+myservice.Register()
+```
+
+Registration is explicit (not `init()`-based) so commands that don't
+need AWS access — like `scout cache clear` — avoid paying the cost
+and avoid the dependency.
 
 ### 5. Add actions (a few lines)
 

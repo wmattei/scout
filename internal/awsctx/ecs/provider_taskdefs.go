@@ -16,8 +16,6 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&ecsTaskDefProvider{}) }
-
 // ecsTaskDefProvider implements services.Provider for the
 // core.RTypeEcsTaskDefFamily type. Owns the yellow tag and the
 // lazy DescribeTaskDefinition flow that resolves a family name

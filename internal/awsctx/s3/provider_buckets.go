@@ -15,8 +15,6 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&bucketProvider{}) }
-
 // bucketProvider implements services.Provider for the
 // core.RTypeBucket type. Wraps the existing ListBuckets adapter and
 // owns the bucket-row presentation: blue tag, region in the meta

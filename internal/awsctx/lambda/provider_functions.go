@@ -15,7 +15,9 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&lambdaFunctionProvider{}) }
+// Register adds this package's providers to the services registry.
+// Called from cmd/scout at startup for commands that need AWS access.
+func Register() { services.Register(&lambdaFunctionProvider{}) }
 
 // lambdaFunctionProvider implements services.Provider for Lambda functions.
 // The ARN is stored as Key (consistent with ECS services). DisplayName is

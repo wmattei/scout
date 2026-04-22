@@ -15,7 +15,9 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&documentProvider{}) }
+// Register adds this package's providers to the services registry.
+// Called from cmd/scout at startup for commands that need AWS access.
+func Register() { services.Register(&documentProvider{}) }
 
 // documentProvider implements services.Provider for SSM Automation
 // documents. Runbook executions are NOT a separate resource type in

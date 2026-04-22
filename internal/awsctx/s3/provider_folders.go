@@ -13,8 +13,6 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&folderProvider{}) }
-
 // folderProvider implements services.Provider for core.RTypeFolder.
 // Folders are virtual S3 prefixes — they only exist inside a
 // drilled-in bucket scope, so this provider is NOT top-level

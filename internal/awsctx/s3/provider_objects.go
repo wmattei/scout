@@ -15,8 +15,6 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&objectProvider{}) }
-
 // objectProvider implements services.Provider for core.RTypeObject.
 // Like folderProvider, objects are scoped-only — they're discovered
 // by drilling into a bucket and then a folder, so IsTopLevel is

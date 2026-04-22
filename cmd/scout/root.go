@@ -29,6 +29,7 @@ func rootCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			closeLog := debuglog.Init()
 			defer closeLog()
+			registerAWSProviders()
 			return runTUI()
 		},
 	}

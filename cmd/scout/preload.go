@@ -39,6 +39,7 @@ Service values:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			closeLog := debuglog.Init()
 			defer closeLog()
+			registerAWSProviders()
 			return runPreload(args[0], awsctx.ListOptions{Limit: limit, Prefix: prefix})
 		},
 	}

@@ -14,7 +14,9 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&ssmParameterProvider{}) }
+// Register adds this package's providers to the services registry.
+// Called from cmd/scout at startup for commands that need AWS access.
+func Register() { services.Register(&ssmParameterProvider{}) }
 
 // ssmParameterProvider implements services.Provider for SSM Parameter Store
 // parameters. Parameter names are their own keys (can contain "/" for

@@ -12,18 +12,7 @@
 //	                 $XDG_CACHE_HOME/scout/debug.log
 package main
 
-import (
-	"os"
-
-	// Provider registrations — blank imports trigger each package's
-	// init() which calls services.Register for its providers.
-	_ "github.com/wmattei/scout/internal/awsctx/automation"
-	_ "github.com/wmattei/scout/internal/awsctx/ecs"
-	_ "github.com/wmattei/scout/internal/awsctx/lambda"
-	_ "github.com/wmattei/scout/internal/awsctx/s3"
-	_ "github.com/wmattei/scout/internal/awsctx/secretsmanager"
-	_ "github.com/wmattei/scout/internal/awsctx/ssm"
-)
+import "os"
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
 var Version = "dev"

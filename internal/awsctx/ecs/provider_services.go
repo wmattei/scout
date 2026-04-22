@@ -16,8 +16,6 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&ecsServiceProvider{}) }
-
 // ecsServiceProvider implements services.Provider for ECS services.
 // Owns the orange tag, the cluster-name meta column, the ECS console
 // service-health URL, and the lazy DescribeServices resolution that

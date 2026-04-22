@@ -17,7 +17,9 @@ import (
 	"github.com/wmattei/scout/internal/services"
 )
 
-func init() { services.Register(&secretProvider{}) }
+// Register adds this package's providers to the services registry.
+// Called from cmd/scout at startup for commands that need AWS access.
+func Register() { services.Register(&secretProvider{}) }
 
 // secretProvider implements services.Provider for Secrets Manager
 // secrets. The resource Key is the secret's bare Name (without the
