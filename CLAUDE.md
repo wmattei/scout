@@ -185,7 +185,12 @@ Keyboard behaviour is unchanged — mouse clicks only copy; every existing short
 | File | Purpose |
 |---|---|
 | `model.go` | Bubbletea Model struct + `Init()` + lazy-detail types + helper accessors |
-| `update.go` | `Update()` — message routing, key handling per mode, all message handlers |
+| `update.go` | `Update()` dispatcher — routes to per-mode key handlers and per-message handlers; also holds mouse routing and `spinTickCmd` |
+| `update_search.go` | `updateSearch` + `recomputeResults` + scope helpers (readScopedCache, clampSelected, deleteLastPathSegment, schedulePollIfNeeded, computeResults, visibleSearchResults) |
+| `update_details.go` | `updateDetails` + `runAction` + `toggleFavoriteForResource` |
+| `update_tail.go` | `updateTail` + viewport helpers (rebuildTailViewport, formatTailLine) |
+| `update_switcher.go` | `updateSwitcher` — profile/region overlay key handling |
+| `update_messages.go` | Async tea.Msg handlers — handleResourcesUpdated, handleActionDone, handleEditorClosed, handleLazyDetailsResolved, handleAutomationStarted, handleTailStarted/Event, handleSwitcherCommitted, handleSpinTick, summarizeErrors |
 | `view.go` | `View()` — frame composition, mode dispatch, toast overlay |
 | `details.go` | Details panel renderer — Name/ARN + provider DetailRows + Actions list |
 | `results.go` | Search result list renderer — tag chips, highlights, meta columns |
