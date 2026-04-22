@@ -14,3 +14,6 @@
 
 # Local cache (for ad-hoc runs against a scratch HOME)
 /tmp/
+
+# Local-only planning/spec docs (not published)
+/docs/
