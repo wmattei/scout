@@ -23,7 +23,7 @@ import (
 
 // msgExecutionFetched carries a completed GetAutomationExecution
 // response into the update loop. Epoch is compared against
-// Model.executionPollEpoch to drop stale responses after the user
+// Model.exec.PollEpoch to drop stale responses after the user
 // leaves the mode.
 type msgExecutionFetched struct {
 	execID string
@@ -33,7 +33,7 @@ type msgExecutionFetched struct {
 }
 
 // msgExecutionStepLogs carries a per-step log snapshot. The handler
-// writes lines into Model.executionStepLogs keyed by StepID.
+// writes lines into Model.exec.StepLogs keyed by StepID.
 type msgExecutionStepLogs struct {
 	stepID string
 	lines  []string
@@ -95,17 +95,17 @@ const executionPostTerminalGrace = 10
 // poll epoch so any in-flight fetches from a prior entry are ignored
 // when they land. Fires a fetch + pre-warmed poll tick.
 func enterExecutionDetails(m Model, execID string) (Model, tea.Cmd) {
-	m.executionPollEpoch++
-	m.executionID = execID
-	m.executionDocument = m.detailsResource
-	m.executionData = nil
-	m.executionStepSel = 0
-	m.executionStepLogs = map[string][]string{}
-	m.executionError = ""
-	m.executionGraceRemaining = executionPostTerminalGrace
+	m.exec.PollEpoch++
+	m.exec.ID = execID
+	m.exec.Document = m.detailsResource
+	m.exec.Data = nil
+	m.exec.StepSel = 0
+	m.exec.StepLogs = map[string][]string{}
+	m.exec.Error = ""
+	m.exec.GraceRemaining = executionPostTerminalGrace
 	m.mode = modeExecutionDetails
 	resizeExecutionViewport(&m)
-	return m, fetchExecutionCmd(m.awsCtx, execID, m.executionPollEpoch)
+	return m, fetchExecutionCmd(m.awsCtx, execID, m.exec.PollEpoch)
 }
 
 // resizeExecutionViewport adjusts the execution viewport to match
@@ -120,8 +120,8 @@ func resizeExecutionViewport(m *Model) {
 	if bodyH < 3 {
 		bodyH = 3
 	}
-	m.executionViewport.Width = m.width
-	m.executionViewport.Height = bodyH
+	m.exec.Viewport.Width = m.width
+	m.exec.Viewport.Height = bodyH
 }
 
 // ----------------------------------------------------------------------
@@ -140,34 +140,34 @@ func updateExecutionDetails(m Model, msg tea.Msg) (Model, tea.Cmd) {
 			// flag on re-entry re-fetches executions so the user
 			// sees any state changes that happened while they
 			// were inside the execution view.
-			m.executionPollEpoch++
+			m.exec.PollEpoch++
 			m.mode = modeDetails
 			m.toast = newToast("", 0)
 			return m, nil
 		case "up", "k":
-			if m.executionStepSel > 0 {
-				m.executionStepSel--
+			if m.exec.StepSel > 0 {
+				m.exec.StepSel--
 			}
 			renderExecutionContent(&m)
 			return m, nil
 		case "down", "j":
-			if m.executionData != nil && m.executionStepSel < len(m.executionData.Steps)-1 {
-				m.executionStepSel++
+			if m.exec.Data != nil && m.exec.StepSel < len(m.exec.Data.Steps)-1 {
+				m.exec.StepSel++
 			}
 			renderExecutionContent(&m)
 			return m, nil
 		case "pgup":
-			m.executionViewport.HalfViewUp()
+			m.exec.Viewport.HalfViewUp()
 			return m, nil
 		case "pgdown":
-			m.executionViewport.HalfViewDown()
+			m.exec.Viewport.HalfViewDown()
 			return m, nil
 		}
 	}
 	// Fall through: let the viewport handle mousewheel + other
 	// navigation keys (home/end etc.).
 	var cmd tea.Cmd
-	m.executionViewport, cmd = m.executionViewport.Update(msg)
+	m.exec.Viewport, cmd = m.exec.Viewport.Update(msg)
 	return m, cmd
 }
 
@@ -176,35 +176,35 @@ func updateExecutionDetails(m Model, msg tea.Msg) (Model, tea.Cmd) {
 // ----------------------------------------------------------------------
 
 func handleExecutionFetched(m Model, msg msgExecutionFetched) (Model, tea.Cmd) {
-	if msg.epoch != m.executionPollEpoch {
+	if msg.epoch != m.exec.PollEpoch {
 		return m, nil // stale — user left the mode
 	}
 	if msg.err != nil {
-		m.executionError = msg.err.Error()
+		m.exec.Error = msg.err.Error()
 		renderExecutionContent(&m)
 		return m, nil
 	}
-	m.executionData = msg.data
-	m.executionError = ""
-	if m.executionStepSel >= len(msg.data.Steps) {
-		m.executionStepSel = len(msg.data.Steps) - 1
-		if m.executionStepSel < 0 {
-			m.executionStepSel = 0
+	m.exec.Data = msg.data
+	m.exec.Error = ""
+	if m.exec.StepSel >= len(msg.data.Steps) {
+		m.exec.StepSel = len(msg.data.Steps) - 1
+		if m.exec.StepSel < 0 {
+			m.exec.StepSel = 0
 		}
 	}
 
 	terminal := automation.IsTerminalStatus(msg.data.Status)
 	if terminal {
-		if m.executionGraceRemaining > 0 {
-			m.executionGraceRemaining--
+		if m.exec.GraceRemaining > 0 {
+			m.exec.GraceRemaining--
 		}
 	} else {
 		// Any time the execution is still in-flight the grace
 		// counter resets — we only enter the post-terminal
 		// catch-up window AFTER the run has actually completed.
-		m.executionGraceRemaining = executionPostTerminalGrace
+		m.exec.GraceRemaining = executionPostTerminalGrace
 	}
-	inGrace := terminal && m.executionGraceRemaining > 0
+	inGrace := terminal && m.exec.GraceRemaining > 0
 
 	renderExecutionContent(&m)
 
@@ -219,19 +219,19 @@ func handleExecutionFetched(m Model, msg msgExecutionFetched) (Model, tea.Cmd) {
 		if _, ok := automation.StepLogGroup(step); !ok {
 			continue
 		}
-		_, cached := m.executionStepLogs[step.StepID]
+		_, cached := m.exec.StepLogs[step.StepID]
 		stepTerminal := automation.IsTerminalStatus(step.Status)
 		if cached && stepTerminal && !inGrace {
 			continue
 		}
-		cmds = append(cmds, fetchStepLogsCmd(m.awsCtx, step, m.executionPollEpoch))
+		cmds = append(cmds, fetchStepLogsCmd(m.awsCtx, step, m.exec.PollEpoch))
 	}
 	// Keep ticking while the run is live OR we're in the
 	// post-terminal grace window. Once grace hits 0 for a
 	// terminal run we drop the ticker and the view stops auto-
 	// refreshing.
-	if !terminal || m.executionGraceRemaining > 0 {
-		cmds = append(cmds, executionPollTickCmd(m.executionPollEpoch))
+	if !terminal || m.exec.GraceRemaining > 0 {
+		cmds = append(cmds, executionPollTickCmd(m.exec.PollEpoch))
 	}
 	if len(cmds) == 0 {
 		return m, nil
@@ -240,24 +240,24 @@ func handleExecutionFetched(m Model, msg msgExecutionFetched) (Model, tea.Cmd) {
 }
 
 func handleExecutionStepLogs(m Model, msg msgExecutionStepLogs) (Model, tea.Cmd) {
-	if msg.epoch != m.executionPollEpoch {
+	if msg.epoch != m.exec.PollEpoch {
 		return m, nil
 	}
-	if m.executionStepLogs == nil {
-		m.executionStepLogs = map[string][]string{}
+	if m.exec.StepLogs == nil {
+		m.exec.StepLogs = map[string][]string{}
 	}
 	if msg.err == nil {
-		m.executionStepLogs[msg.stepID] = msg.lines
+		m.exec.StepLogs[msg.stepID] = msg.lines
 		renderExecutionContent(&m)
 	}
 	return m, nil
 }
 
 func handleExecutionPollTick(m Model, msg msgExecutionPollTick) (Model, tea.Cmd) {
-	if msg.epoch != m.executionPollEpoch || m.mode != modeExecutionDetails {
+	if msg.epoch != m.exec.PollEpoch || m.mode != modeExecutionDetails {
 		return m, nil
 	}
-	return m, fetchExecutionCmd(m.awsCtx, m.executionID, m.executionPollEpoch)
+	return m, fetchExecutionCmd(m.awsCtx, m.exec.ID, m.exec.PollEpoch)
 }
 
 // ----------------------------------------------------------------------
@@ -268,10 +268,10 @@ func handleExecutionPollTick(m Model, msg msgExecutionPollTick) (Model, tea.Cmd)
 // It delegates to renderExecutionContent (which populates the viewport)
 // and returns the viewport's visible frame.
 func renderExecutionDetails(m Model, width, height int) string {
-	m.executionViewport.Width = width
-	m.executionViewport.Height = height
+	m.exec.Viewport.Width = width
+	m.exec.Viewport.Height = height
 	renderExecutionContent(&m)
-	return m.executionViewport.View()
+	return m.exec.Viewport.View()
 }
 
 // renderExecutionContent assembles the entire execution body (header,
@@ -279,10 +279,10 @@ func renderExecutionDetails(m Model, width, height int) string {
 // scrollback. Also scrolls the viewport so the currently-selected
 // step stays visible.
 func renderExecutionContent(m *Model) {
-	if m.executionViewport.Width == 0 {
+	if m.exec.Viewport.Width == 0 {
 		resizeExecutionViewport(m)
 	}
-	width := m.executionViewport.Width
+	width := m.exec.Viewport.Width
 	if width < 40 {
 		width = 40
 	}
@@ -296,8 +296,8 @@ func renderExecutionContent(m *Model) {
 	}
 	stepStarts := make([]int, 0)
 	currentLine := strings.Count(b.String(), "\n")
-	if m.executionData != nil {
-		for i, step := range m.executionData.Steps {
+	if m.exec.Data != nil {
+		for i, step := range m.exec.Data.Steps {
 			tile := renderStepTile(*m, step, i, width)
 			stepStarts = append(stepStarts, currentLine)
 			b.WriteString(tile)
@@ -307,17 +307,17 @@ func renderExecutionContent(m *Model) {
 	}
 
 	content := strings.TrimRight(b.String(), "\n")
-	m.executionViewport.SetContent(content)
+	m.exec.Viewport.SetContent(content)
 
 	// Auto-scroll so the selected step is visible.
-	if m.executionStepSel >= 0 && m.executionStepSel < len(stepStarts) {
-		target := stepStarts[m.executionStepSel]
-		currentYOffset := m.executionViewport.YOffset
-		visibleEnd := currentYOffset + m.executionViewport.Height
+	if m.exec.StepSel >= 0 && m.exec.StepSel < len(stepStarts) {
+		target := stepStarts[m.exec.StepSel]
+		currentYOffset := m.exec.Viewport.YOffset
+		visibleEnd := currentYOffset + m.exec.Viewport.Height
 		if target < currentYOffset {
-			m.executionViewport.SetYOffset(target)
+			m.exec.Viewport.SetYOffset(target)
 		} else if target >= visibleEnd-2 {
-			m.executionViewport.SetYOffset(target - m.executionViewport.Height + 4)
+			m.exec.Viewport.SetYOffset(target - m.exec.Viewport.Height + 4)
 		}
 	}
 }
@@ -325,16 +325,16 @@ func renderExecutionContent(m *Model) {
 // renderExecutionHeader builds the top block: execution identity +
 // overall status badge + timing.
 func renderExecutionHeader(m Model, width int) string {
-	data := m.executionData
+	data := m.exec.Data
 	var b strings.Builder
 
-	if m.executionError != "" {
-		errLine := styleExecErr.Render("fetch failed: " + m.executionError)
-		return renderExecZone("EXECUTION "+shortExecID(m.executionID), errLine, width, 0, false)
+	if m.exec.Error != "" {
+		errLine := styleExecErr.Render("fetch failed: " + m.exec.Error)
+		return renderExecZone("EXECUTION "+shortExecID(m.exec.ID), errLine, width, 0, false)
 	}
 
 	if data == nil {
-		return renderExecZone("EXECUTION "+shortExecID(m.executionID),
+		return renderExecZone("EXECUTION "+shortExecID(m.exec.ID),
 			styleExecDim.Render(spinnerFrame(m.spinTick)+"  loading execution…"),
 			width, 0, false)
 	}
@@ -378,11 +378,11 @@ func renderExecutionHeader(m Model, width int) string {
 // as pretty-printed colorized JSON inside its own zone. Returns ""
 // when the execution has no parameters.
 func renderExecutionInputs(m Model, width int) string {
-	if m.executionData == nil || len(m.executionData.Parameters) == 0 {
+	if m.exec.Data == nil || len(m.exec.Data.Parameters) == 0 {
 		return ""
 	}
 	obj := map[string]interface{}{}
-	for k, v := range m.executionData.Parameters {
+	for k, v := range m.exec.Data.Parameters {
 		if len(v) == 1 {
 			obj[k] = v[0]
 		} else {
@@ -398,9 +398,9 @@ func renderExecutionInputs(m Model, width int) string {
 }
 
 // renderStepTile renders one step's bordered block. When step index
-// matches executionStepSel, the border is highlighted.
+// matches exec.StepSel, the border is highlighted.
 func renderStepTile(m Model, step automation.StepDetails, index, width int) string {
-	selected := index == m.executionStepSel
+	selected := index == m.exec.StepSel
 
 	title := fmt.Sprintf("%d · %s · %s", index+1, step.StepName, step.Action)
 	var bodyBuf strings.Builder
@@ -417,7 +417,7 @@ func renderStepTile(m Model, step automation.StepDetails, index, width int) stri
 	// steps, show Response/Failure/Outputs as plain text.
 	_, isLambda := automation.StepLogGroup(step)
 	if isLambda {
-		lines, cached := m.executionStepLogs[step.StepID]
+		lines, cached := m.exec.StepLogs[step.StepID]
 		switch {
 		case !cached:
 			bodyBuf.WriteString(styleExecDim.Render(spinnerFrame(m.spinTick) + "  loading logs…"))

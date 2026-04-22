@@ -140,18 +140,24 @@ type Model struct {
 	eventSel     int
 
 	// Execution-details mode state — populated when entering a
-	// runbook execution. executionPollEpoch invalidates in-flight
-	// polls after Esc/mode switches so stale msgExecutionFetched
-	// messages don't overwrite fresh state.
-	executionID             string
-	executionDocument       core.Resource
-	executionData           *automation.ExecutionDetails
-	executionStepLogs       map[string][]string
-	executionStepSel        int
-	executionError          string
-	executionPollEpoch      int
-	executionGraceRemaining int // extra ticks to poll after terminal for log catch-up
-	executionViewport       viewport.Model
+	// runbook execution. See executionState for field docs.
+	exec executionState
+}
+
+// executionState bundles every field that is only meaningful while the
+// TUI is in modeExecution. Consolidating the fields keeps the top-level
+// Model focused on search/details concerns and makes it obvious which
+// state to reset when leaving the mode.
+type executionState struct {
+	ID             string
+	Document       core.Resource
+	Data           *automation.ExecutionDetails
+	StepLogs       map[string][]string
+	StepSel        int
+	Error          string
+	PollEpoch      int // invalidates in-flight polls after Esc/mode switches
+	GraceRemaining int // extra ticks to poll after terminal for log catch-up
+	Viewport       viewport.Model
 }
 
 const (
@@ -180,9 +186,11 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		mode:                modeSearch,
 		lazyDetails:         make(map[lazyDetailKey]map[string]string),
 		lazyDetailsState:    make(map[lazyDetailKey]lazyDetailState),
-		tailViewport:        viewport.New(80, 10),
-		executionViewport:   viewport.New(80, 10),
-		executionStepLogs:   map[string][]string{},
+		tailViewport: viewport.New(80, 10),
+		exec: executionState{
+			Viewport: viewport.New(80, 10),
+			StepLogs: map[string][]string{},
+		},
 		serviceScopeFetched: make(map[string]struct{}),
 		detailsHitMap:       new([]clickRegion),
 	}
