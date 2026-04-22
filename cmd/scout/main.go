@@ -2,13 +2,14 @@
 //
 // Argv forms:
 //
-//	scout                 — launch the TUI
-//	scout cache clear     — wipe the on-disk cache and exit
+//	scout                            — launch the TUI
+//	scout preload [flags] <service>  — populate cache from AWS
+//	scout cache clear                — wipe the on-disk cache
 //
 // Environment flags:
 //
 //	SCOUT_DEBUG=1  — enable the file-backed debug log at
-//	                      $XDG_CACHE_HOME/scout/debug.log
+//	                 $XDG_CACHE_HOME/scout/debug.log
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spf13/cobra"
 
 	"github.com/wmattei/scout/internal/awsctx"
 	"github.com/wmattei/scout/internal/core"
@@ -42,48 +44,66 @@ import (
 var Version = "dev"
 
 func main() {
-	// Subcommand dispatch.
-	if len(os.Args) >= 2 && (os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h") {
-		printHelp()
-		return
-	}
-	if len(os.Args) >= 3 && os.Args[1] == "cache" && os.Args[2] == "clear" {
-		if err := runCacheClear(); err != nil {
-			fmt.Fprintf(os.Stderr, "scout: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) >= 2 && os.Args[1] == "preload" {
-		closeLog := debuglog.Init()
-		defer closeLog()
-		if err := runPreload(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "scout: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) >= 2 {
-		fmt.Fprintf(os.Stderr, "scout: unknown command %q\n", os.Args[1])
-		printHelp()
-		os.Exit(1)
-	}
-
-	closeLog := debuglog.Init()
-	defer closeLog()
-
-	if err := runTUI(); err != nil {
-		fmt.Fprintf(os.Stderr, "scout: %v\n", err)
+	if err := rootCmd().Execute(); err != nil {
+		// Cobra already prints the error; just exit non-zero.
 		os.Exit(1)
 	}
 }
 
+// rootCmd builds the root command tree. The root's RunE launches the
+// TUI when invoked with no subcommand; subcommands override that.
+func rootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:          "scout",
+		Short:        "Interactive AWS resource navigator",
+		Long:         rootLongHelp,
+		Version:      Version,
+		SilenceUsage: true, // keep errors terse; usage only on bad flags
+		RunE: func(cmd *cobra.Command, args []string) error {
+			closeLog := debuglog.Init()
+			defer closeLog()
+			return runTUI()
+		},
+	}
+	root.AddCommand(preloadCmd(), cacheCmd())
+	return root
+}
+
+const rootLongHelp = `scout is an interactive terminal UI for navigating AWS infrastructure.
+
+Running scout with no arguments launches the TUI. Subcommands let you
+populate the local cache or wipe it.
+
+Service scopes (type in TUI):
+  s3:, buckets:                         S3 buckets
+  ecs:, svc:, services:                 ECS services
+  td:, task:, taskdef:                  ECS task definitions
+  lambda:, fn:, functions:              Lambda functions
+  ssm:, param:, params:, parameter:     SSM parameters
+  secrets:, secret:, sm:, sec:          Secrets Manager secrets
+  auto:, automation:, runbook:          SSM Automation documents
+
+Key bindings:
+  ↑/↓          Navigate results
+  Tab          Autocomplete / drill into bucket
+  Enter        Open details + actions
+  f            Toggle favorite on focused resource
+  Click        Copy Name / ARN / linked cell in Details
+  Esc          Back
+  Ctrl+P       Switch AWS profile/region
+  Ctrl+C       Quit
+  /            Filter (in tail logs)
+  Opt+Bksp     Delete path segment
+
+Environment:
+  AWS_PROFILE, AWS_REGION    Standard SDK credential chain
+  SCOUT_DEBUG=1              Enable debug log
+  EDITOR                     Editor for Lambda Run / SSM Update / Secret Update`
+
 // runTUI wraps the bubbletea program in a panic-safe hook. Any panic
 // originating inside Init / Update / View / Cmd handlers gets a stack
 // dump written to crash.log and is converted into a normal error
-// returned to main. Bubbletea's own Run() should restore the terminal
-// before the panic propagates, but we belt-and-suspenders with a
-// deferred os.Stdout write just in case.
+// returned to main.
 func runTUI() (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -106,19 +126,11 @@ func runTUI() (err error) {
 	activity := awsctx.NewActivity()
 	activity.Attach(&awsCtx.Cfg)
 
-	// Tell the index layer which types are top-level so it can
-	// build the unified search snapshot. The data lives on the
-	// services registry; we copy it here once so internal/index
-	// doesn't need to import internal/services and create a cycle.
-	{
-		types := make([]core.ResourceType, 0)
-		priority := make(map[core.ResourceType]int)
-		for _, p := range services.TopLevel() {
-			types = append(types, p.Type())
-			priority[p.Type()] = p.SortPriority()
-		}
-		index.SetTopLevelTypes(types, priority)
-	}
+	// Tell the index layer which types are top-level so it can build the
+	// unified search snapshot. The data lives on the services registry;
+	// copy it here once so internal/index doesn't need to import
+	// internal/services and create a cycle.
+	seedTopLevelTypes()
 
 	db, err := index.Open(awsCtx.Profile, awsCtx.Region)
 	if err != nil {
@@ -135,9 +147,7 @@ func runTUI() (err error) {
 
 	prefsDB, prefsState, err := prefs.Open(awsCtx.Profile, awsCtx.Region)
 	if err != nil {
-		// Non-fatal: the TUI handles nil prefs gracefully (toggle
-		// and MarkVisited become no-ops, home page falls back to
-		// the cache-empty message). Log the failure and continue.
+		// Non-fatal: the TUI handles nil prefs gracefully.
 		debuglog.Logger().Warn("prefs unavailable", "err", err)
 		prefsDB, prefsState = nil, nil
 	}
@@ -157,10 +167,78 @@ func runTUI() (err error) {
 	return nil
 }
 
+// seedTopLevelTypes populates the index layer's top-level-type registry
+// from the services package. Shared by runTUI and preload so both paths
+// build identical unified search snapshots.
+func seedTopLevelTypes() {
+	types := make([]core.ResourceType, 0)
+	priority := make(map[core.ResourceType]int)
+	for _, p := range services.TopLevel() {
+		types = append(types, p.Type())
+		priority[p.Type()] = p.SortPriority()
+	}
+	index.SetTopLevelTypes(types, priority)
+}
+
+// cacheDir mirrors the resolver in internal/index but is duplicated
+// here so the cache-clear subcommand works without opening a DB first.
+func cacheDir() (string, error) {
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "scout"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cache", "scout"), nil
+}
+
+func crashLogPath() string {
+	dir, err := cacheDir()
+	if err != nil {
+		return "crash.log"
+	}
+	return filepath.Join(dir, "crash.log")
+}
+
+// writeCrashLog persists a panic + its stack to crash.log, overwriting
+// any previous crash.
+func writeCrashLog(panicVal interface{}, stack []byte) error {
+	path := crashLogPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "scout %s crash log\n", Version)
+	fmt.Fprintf(f, "panic: %v\n\n", panicVal)
+	fmt.Fprintf(f, "stack:\n%s\n", stack)
+	return nil
+}
+
+// cacheCmd builds the `cache` subcommand group and its `clear` child.
+func cacheCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "cache",
+		Short: "Manage the local resource cache",
+	}
+	c.AddCommand(&cobra.Command{
+		Use:   "clear",
+		Short: "Wipe the on-disk cache (preserves favorites/recents)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCacheClear()
+		},
+	})
+	return c
+}
+
 // runCacheClear wipes the on-disk AWS resource cache. User preference
 // files (*__prefs.db holding favorites and recents) are preserved
 // by design — clearing the cache should not destroy user state.
-// Safe to call when the directory does not exist.
 func runCacheClear() error {
 	dir, err := cacheDir()
 	if err != nil {
@@ -192,85 +270,5 @@ func runCacheClear() error {
 		removed++
 	}
 	fmt.Printf("scout: cleared %d cache file(s) at %s (prefs preserved)\n", removed, dir)
-	return nil
-}
-
-// cacheDir mirrors the resolver in internal/index but is duplicated
-// here so the cache-clear subcommand works without opening a DB first.
-func cacheDir() (string, error) {
-	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
-		return filepath.Join(xdg, "scout"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".cache", "scout"), nil
-}
-
-// crashLogPath returns the absolute path to the crash log.
-func crashLogPath() string {
-	dir, err := cacheDir()
-	if err != nil {
-		// Fall back to the current working directory so the user still
-		// has a way to find the dump.
-		return "crash.log"
-	}
-	return filepath.Join(dir, "crash.log")
-}
-
-// printHelp prints the usage summary to stdout.
-func printHelp() {
-	fmt.Print(`scout — interactive AWS resource navigator
-
-Usage:
-  scout                            Launch the TUI
-  scout preload <service|all>      Populate cache (--limit N, --prefix S)
-  scout cache clear                Wipe local cache
-  scout help                       Show this help
-
-Service scopes (type in TUI):
-  s3:, buckets:                         S3 buckets
-  ecs:, svc:, services:                 ECS services
-  td:, task:, taskdef:                  ECS task definitions
-  lambda:, fn:, functions:              Lambda functions
-  ssm:, param:, params:, parameter:     SSM parameters
-  secrets:, secret:, sm:, sec:          Secrets Manager secrets
-  auto:, automation:, runbook:          SSM Automation documents
-
-Key bindings:
-  ↑/↓         Navigate results
-  Tab          Autocomplete / drill into bucket
-  Enter        Open details + actions
-  f            Toggle favorite on focused resource
-  Click        Copy Name / ARN / linked cell in Details
-  Esc          Back
-  Ctrl+P       Switch AWS profile/region
-  Ctrl+C       Quit
-  /            Filter (in tail logs)
-  Opt+Bksp     Delete path segment
-
-Environment:
-  AWS_PROFILE, AWS_REGION               Standard SDK credential chain
-  SCOUT_DEBUG=1                    Enable debug log
-  EDITOR                                Editor for Lambda Run / SSM Update
-`)
-}
-
-// writeCrashLog persists a panic + its stack to crash.log, overwriting
-// any previous crash.
-func writeCrashLog(panicVal interface{}, stack []byte) error {
-	path := crashLogPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	fmt.Fprintf(f, "scout %s crash log\n", Version)
-	fmt.Fprintf(f, "panic: %v\n\n", panicVal)
-	fmt.Fprintf(f, "stack:\n%s\n", stack)
 	return nil
 }
