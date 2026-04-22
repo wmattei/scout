@@ -5,18 +5,40 @@
 //
 // The value is overridden at build time by GoReleaser via
 //
-//	-ldflags "-X github.com/wmattei/scout/internal/version.Current=v0.2.0"
+//	-ldflags "-X github.com/wmattei/scout/internal/version.Current=v1.2.0"
 //
-// Unreleased local builds keep the "dev" default so IsDev reports true.
+// Unreleased local builds keep the "dev" default.
 package version
+
+import "strings"
 
 // Current is the running binary's version. Do not mutate at runtime;
 // treat as read-only after program start.
 var Current = "dev"
 
-// IsDev reports whether the running binary is a non-release build.
-// True when Current is the default "dev" or the empty string (which
-// would indicate a build that forgot to inject a version).
+// IsDev reports whether the running binary is a non-stable build. True
+// when Current is "dev" (local build), the empty string (build that
+// forgot to inject), or a semver string with a pre-release suffix
+// (e.g. "v1.2.0-beta", "v1.2.0-rc.1").
 func IsDev() bool {
-	return Current == "dev" || Current == ""
+	if Current == "" || Current == "dev" {
+		return true
+	}
+	return strings.Contains(Current, "-")
+}
+
+// BannerText returns the label the TUI should render in the status-bar
+// warning pill, or "" for stable releases. Format:
+//
+//	"DEV BUILD"                 — local unreleased build
+//	"PRE-RELEASE v1.2.0-beta"   — tagged beta/rc/etc.
+//	""                          — stable release (no banner)
+func BannerText() string {
+	switch {
+	case Current == "" || Current == "dev":
+		return "DEV BUILD"
+	case strings.Contains(Current, "-"):
+		return "PRE-RELEASE " + Current
+	}
+	return ""
 }

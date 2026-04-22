@@ -17,12 +17,13 @@ func spinnerFrame(tick int) string { return spinnerFrames[tick%len(spinnerFrames
 // and activity indicator. width is the full frame width; the returned
 // string is exactly one line tall and exactly `width` columns wide.
 func renderStatus(width int, profile, region, account string, activity awsctx.ActivitySnapshot, tick int) string {
-	// Dev banner: only rendered for non-release builds so users running
-	// GoReleaser-produced binaries see a clean status bar. The pill sits
+	// Non-stable-build banner. version.BannerText returns "" for stable
+	// releases (clean status bar), "DEV BUILD" for local builds, and
+	// "PRE-RELEASE v1.2.0-beta" for tagged pre-releases. The pill sits
 	// at the leading edge so it's the first thing the eye catches.
 	leadingBanner := ""
-	if version.IsDev() {
-		leadingBanner = styleDevBanner.Render("DEV BUILD") + " "
+	if label := version.BannerText(); label != "" {
+		leadingBanner = styleDevBanner.Render(label) + " "
 	}
 
 	left := fmt.Sprintf("profile=%s  region=%s", profile, region)
