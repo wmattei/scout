@@ -208,18 +208,36 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 	}
 }
 
-// WithOnboarding returns a copy of the model ready to render the
-// onboarding screen instead of the search bar. Used by cmd/scout/root
-// when awsctx.Resolve fails at startup so the TUI can recover the
-// user instead of exiting with an error. `reason` is the resolve
-// error's message, shown verbatim on the onboarding screen.
-// `profiles` is the output of awsctx.ListProfiles — pass the live
-// list so the onboarding screen can branch between "pick a profile"
-// and "set up AWS first".
+// WithOnboarding returns a copy of the model prepared to recover from
+// an AWS-resolve failure at startup. Called by cmd/scout/root when
+// awsctx.Resolve returns an error. Branches on whether the user has
+// any profiles configured locally:
+//
+//   - Profiles exist → jump straight to the profile/region switcher.
+//     The resolve error is surfaced as a toast so the user still sees
+//     why scout couldn't start normally. prevMode is wired to
+//     modeOnboarding so pressing Esc inside the switcher lands on the
+//     onboarding screen (which still offers Ctrl+P) rather than a
+//     blank search bar with no AWS context.
+//
+//   - No profiles → show the onboarding screen with setup
+//     instructions. The user must configure AWS before there's
+//     anything for the switcher to show.
+//
+// `reason` is the resolve error's message; `profiles` is the output
+// of awsctx.ListProfiles.
 func (m Model) WithOnboarding(reason string, profiles []string) Model {
-	m.mode = modeOnboarding
 	m.onboardingReason = reason
 	m.onboardingProfiles = profiles
+	if len(profiles) > 0 {
+		m.switcher = newSwitcher("", "")
+		m.switcher.Show()
+		m.prevMode = modeOnboarding
+		m.mode = modeSwitcher
+		m.toast = newErrorToast("aws: " + reason)
+	} else {
+		m.mode = modeOnboarding
+	}
 	return m
 }
 
