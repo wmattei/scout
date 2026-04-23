@@ -9,7 +9,20 @@ import (
 
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/effect"
+	"github.com/wmattei/scout/internal/module"
 )
+
+// moduleContextFor builds the module.Context passed into a module's
+// entry points. Mirrors the current moduleState snapshot so modules
+// can read their own state inside BuildDetails, HandleSearch, and
+// Action.Run closures.
+func (m Model) moduleContextFor(packageID string) module.Context {
+	return module.Context{
+		AWSCtx: m.awsCtx,
+		Cache:  m.moduleCache,
+		State:  m.moduleState[packageID],
+	}
+}
 
 // modelHost implements effect.Host against a *Model. The reducer
 // mutates the model indirectly through these methods so effect/
