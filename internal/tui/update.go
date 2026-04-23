@@ -106,6 +106,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSwitcherCommitted(msg)
 	case msgSpinTick:
 		return m.handleSpinTick()
+	case msgEffectDone:
+		return m.handleEffectDone(msg)
 	}
 
 	return m, nil

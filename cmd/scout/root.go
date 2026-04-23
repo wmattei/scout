@@ -12,6 +12,7 @@ import (
 
 	"github.com/wmattei/scout/internal/awsctx"
 	"github.com/wmattei/scout/internal/awsctx/providers"
+	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/debuglog"
 	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/module"
@@ -101,7 +102,6 @@ func runTUI() (err error) {
 	// Phase 2.
 	registry := module.NewRegistry()
 	modules.RegisterAll(registry)
-	_ = registry // silence unused during Phase 1
 
 	activity := awsctx.NewActivity()
 
@@ -151,7 +151,19 @@ func runTUI() (err error) {
 		"version", version.Current,
 	)
 
-	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState)
+	var moduleCache *cache.DB
+	if resolveErr == nil {
+		moduleCache, err = cache.Open(awsCtx.Profile, awsCtx.Region)
+		if err != nil {
+			return fmt.Errorf("open module cache: %w", err)
+		}
+		defer moduleCache.Close()
+		if err := moduleCache.PurgeOrphans(ctx, registry.IDs()); err != nil {
+			debuglog.Logger().Warn("orphan purge failed", "err", err)
+		}
+	}
+
+	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState, registry, moduleCache)
 	if resolveErr != nil {
 		model = model.WithOnboarding(resolveErr.Error(), awsctx.ListProfiles())
 	}

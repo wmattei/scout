@@ -8,8 +8,11 @@ import (
 	"github.com/wmattei/scout/internal/awsctx"
 	"github.com/wmattei/scout/internal/awsctx/automation"
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
+	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/effect"
 	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 )
@@ -154,6 +157,32 @@ type Model struct {
 	// whether to prompt "Ctrl+P to pick a profile" or the full AWS
 	// setup instructions.
 	onboardingProfiles []string
+
+	// --- modules refactor (Phase 1) ---
+
+	// moduleState stores per-module opaque state, keyed by module
+	// manifest ID. Persists across keystrokes; wiped by the
+	// switcher commit flow.
+	moduleState map[string]effect.State
+
+	// moduleCache is the new shared-cache handle (internal/cache
+	// package). Runs alongside the legacy index/ handles during
+	// migration; Phase 3 consolidates.
+	moduleCache *cache.DB
+
+	// registry is the module registry. Populated at startup; the
+	// effect reducer uses it to look up modules by ID.
+	registry *module.Registry
+
+	// moduleLazy replaces lazyDetails during Phase 2 migrations.
+	// Keyed by (packageID, key). Lazy maps landed via SetLazy
+	// effects from module.ResolveDetails.
+	moduleLazy map[lazyDetailKey]map[string]string
+
+	// pendingEditorEffectOnSave is the callback wired by an Editor
+	// effect. When the editor closes with saved content, this
+	// produces the next Effect to reduce.
+	pendingEditorEffectOnSave func([]byte) effect.Effect
 }
 
 // executionState bundles every field that is only meaningful while the
@@ -178,7 +207,12 @@ const (
 )
 
 // NewModel constructs the initial model for the bubbletea program.
-func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activity *awsctx.Activity, prefsDB *prefs.DB, prefsState *prefs.State) Model {
+func NewModel(
+	memory *index.Memory, db *index.DB,
+	awsCtx *awsctx.Context, activity *awsctx.Activity,
+	prefsDB *prefs.DB, prefsState *prefs.State,
+	registry *module.Registry, moduleCache *cache.DB,
+) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search…"
 	ti.Prompt = "> "
@@ -198,13 +232,17 @@ func NewModel(memory *index.Memory, db *index.DB, awsCtx *awsctx.Context, activi
 		mode:                modeSearch,
 		lazyDetails:         make(map[lazyDetailKey]map[string]string),
 		lazyDetailsState:    make(map[lazyDetailKey]lazyDetailState),
-		tailViewport: viewport.New(80, 10),
+		tailViewport:        viewport.New(80, 10),
 		exec: executionState{
 			Viewport: viewport.New(80, 10),
 			StepLogs: map[string][]string{},
 		},
 		serviceScopeFetched: make(map[string]struct{}),
 		detailsHitMap:       new([]clickRegion),
+		moduleState:         make(map[string]effect.State),
+		moduleLazy:          make(map[lazyDetailKey]map[string]string),
+		registry:            registry,
+		moduleCache:         moduleCache,
 	}
 }
 
