@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 )
@@ -147,7 +148,7 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		if favSel < 0 || favSel >= favBudget {
 			favSel = -1
 		}
-		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState))
+		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState, m.registry))
 		lines += favBudget - 1 // renderResultsRange emitted favBudget lines joined by \n; writeLine added 1 more
 	}
 
@@ -162,7 +163,7 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		if recSel < 0 || recSel >= recBudget {
 			recSel = -1
 		}
-		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState))
+		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState, m.registry))
 		lines += recBudget - 1
 	}
 
@@ -178,13 +179,13 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 // row within the displayed window. This is a thin wrapper so the
 // home page and the regular search body both share the same per-row
 // formatting without renderResults' empty-state centering logic.
-func renderResultsRange(results []search.Result, selected, start, height, width int, favs *prefs.State) string {
+func renderResultsRange(results []search.Result, selected, start, height, width int, favs *prefs.State, registry *module.Registry) string {
 	// Delegate to renderResults with the same args. renderResults
 	// already handles windowing via its scroll-window calculation
 	// when selected >= height, so passing height equal to the budget
 	// and the full list works.
 	_ = start // renderResults computes its own start from `selected`
-	return strings.TrimRight(renderResults(results, selected, width, height, "", favs), "\n")
+	return strings.TrimRight(renderResults(results, selected, width, height, "", favs, registry), "\n")
 }
 
 // homeActive reports whether the TUI should render the home page

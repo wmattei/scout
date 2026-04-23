@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 	"github.com/wmattei/scout/internal/services"
@@ -23,7 +24,7 @@ import (
 //
 // The name segment takes whatever horizontal space is left after the
 // indicator, tag, spacing, and meta columns.
-func renderResults(results []search.Result, selected, width, height int, emptyMsg string, favs *prefs.State) string {
+func renderResults(results []search.Result, selected, width, height int, emptyMsg string, favs *prefs.State, registry *module.Registry) string {
 	if len(results) == 0 {
 		return centerEmptyState(width, height, emptyMsg)
 	}
@@ -59,37 +60,39 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 			indi = styleSelIndi.Render("▸ ")
 		}
 
-		// 2. Tag — pulled from the per-type Provider so styles.go
-		// no longer needs to know which colors belong to which
-		// resource.
-		tag := ""
-		if p, ok := services.Get(r.Resource.Type); ok {
-			tag = p.TagStyle().Render(padTag(p.TagLabel()))
+		// 2-4. Tag / meta / display name — module rows go through the
+		// module registry; legacy rows go through the services
+		// provider registry.
+		var (
+			tag        string
+			meta       string
+			displayRaw string
+		)
+		if r.ModuleRow != nil {
+			tag, meta, displayRaw = moduleRowDisplay(r.ModuleRow, registry)
 		} else {
-			tag = padTag("???")
+			if p, ok := services.Get(r.Resource.Type); ok {
+				tag = p.TagStyle().Render(padTag(p.TagLabel()))
+			} else {
+				tag = padTag("???")
+			}
+			meta = renderMeta(r.Resource)
+			displayRaw = r.Resource.DisplayName
 		}
 
-		// 3. Meta (right-aligned).
-		meta := renderMeta(r.Resource)
-
-		// 4. Name (flex, with highlight spans). Prepend a ★ marker
-		// when this resource is favorited so users can see the
-		// starred state at a glance — highlight offsets remain
-		// correct because the marker is prepended *after* highlight
-		// rendering.
 		nameBudget := width - indiWidth - tagWidth - gap*2 - lipgloss.Width(meta)
 		if nameBudget < 4 {
 			nameBudget = 4
 		}
 		starPrefix := ""
-		if favs != nil && favs.IsFavorite(r.Resource.Type, r.Resource.Key) {
+		if r.ModuleRow == nil && favs != nil && favs.IsFavorite(r.Resource.Type, r.Resource.Key) {
 			starPrefix = "★ "
 			nameBudget -= lipgloss.Width(starPrefix)
 			if nameBudget < 4 {
 				nameBudget = 4
 			}
 		}
-		name := renderNameWithHighlights(r.Resource.DisplayName, r.MatchedRunes, nameBudget)
+		name := renderNameWithHighlights(displayRaw, r.MatchedRunes, nameBudget)
 
 		line := fmt.Sprintf("%s%s %s%s %s", indi, tag, starPrefix, padRight(name, nameBudget), meta)
 		if isSelected {
@@ -154,6 +157,20 @@ func renderNameWithHighlights(name string, matchIdx []int, maxWidth int) string 
 		}
 	}
 	return b.String()
+}
+
+// moduleRowDisplay builds (tag, meta, displayName) for a module row.
+// Tag is styled via the module Manifest's TagStyle when the module
+// is registered; falls back to an unstyled uppercase PackageID if not.
+func moduleRowDisplay(r *core.Row, registry *module.Registry) (tag, meta, displayName string) {
+	displayName = r.Name
+	if registry != nil {
+		if mod, ok := registry.Get(r.PackageID); ok {
+			mani := mod.Manifest()
+			return mani.TagStyle.Render(padTag(mani.Tag)), "", displayName
+		}
+	}
+	return padTag(strings.ToUpper(r.PackageID)), "", displayName
 }
 
 // renderMeta returns the dim-styled meta column for a result row,
