@@ -6,6 +6,7 @@ package modules
 import (
 	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/modules/lambda"
+	"github.com/wmattei/scout/internal/modules/ssm"
 )
 
 // RegisterAll populates the registry. Called from cmd/scout at
@@ -13,4 +14,5 @@ import (
 // preload). cache-clear skips it.
 func RegisterAll(r *module.Registry) {
 	r.Register(lambda.New())
+	r.Register(ssm.New())
 }
