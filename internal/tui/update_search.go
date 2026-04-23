@@ -142,7 +142,9 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	}
 
 	if scope.IsTopLevel() {
-		m.results = partitionByFavorites(computeResults(m.input.Value(), m.memory), m.prefsState)
+		legacy := computeResults(m.input.Value(), m.memory)
+		modRows := m.computeModuleResults(m.input.Value())
+		m.results = partitionByFavorites(append(legacy, modRows...), m.prefsState)
 		m.scopedResults = nil
 		m.scopedQuery = ""
 		m.clampSelected()
@@ -271,4 +273,20 @@ func computeResults(query string, mem *index.Memory) []search.Result {
 		return nil
 	}
 	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
+}
+
+// computeModuleResults fuzz-matches the query against every row
+// cached by the modules. Returns nil when no module cache is open or
+// when the query is empty (mirrors computeResults's baseline).
+func (m Model) computeModuleResults(query string) []search.Result {
+	if m.moduleCache == nil || query == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	rows, err := m.moduleCache.AllRows(ctx)
+	if err != nil {
+		return nil
+	}
+	return search.FuzzyOverRows(query, rows, MaxDisplayedResults)
 }
