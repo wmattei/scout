@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/search"
 	"github.com/wmattei/scout/internal/services"
@@ -117,6 +118,13 @@ func (m Model) handleTab() (tea.Model, tea.Cmd) {
 // and returns the combined tea.Cmd for text-input update and any
 // follow-up scoped-search command.
 func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	// Module path: when the input is "<alias>:<query>" and alias is
+	// owned by a module, dispatch to module.HandleSearch and short-
+	// circuit the legacy provider-scope parsing below.
+	if alias, rest, ok := m.scopeFromInput(m.input.Value()); ok {
+		return m.dispatchModuleScope(alias, rest, cmd)
+	}
+
 	scope := search.ParseScope(m.input.Value())
 
 	// Service-scope mode ("s3:", "ecs:", "td:" etc.). First time the
@@ -273,6 +281,52 @@ func computeResults(query string, mem *index.Memory) []search.Result {
 		return nil
 	}
 	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
+}
+
+// dispatchModuleScope invokes the module's HandleSearch, updates
+// moduleState with the returned State, and reduces the returned
+// effects through ApplyEffect (accumulating their tea.Cmds).
+func (m Model) dispatchModuleScope(alias, rest string, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	mod, ok := m.moduleForAlias(alias)
+	if !ok {
+		return m, cmd
+	}
+	id := mod.Manifest().ID
+	ctxMod := m.moduleContextFor(id)
+	state := m.moduleState[id]
+	rows, newState, effects := mod.HandleSearch(ctxMod, rest, state)
+	m.moduleState[id] = newState
+	m.scopedResults = moduleRowsToResults(rows)
+	m.scopedQuery = rest
+	m.results = nil
+	m.clampSelected()
+
+	var cmds []tea.Cmd
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	for _, eff := range effects {
+		newM, c := ApplyEffect(m, eff)
+		m = newM
+		if c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// moduleRowsToResults wraps a slice of module Rows in search.Result
+// records (ModuleRow populated, Resource zero).
+func moduleRowsToResults(rows []core.Row) []search.Result {
+	out := make([]search.Result, 0, len(rows))
+	for i := range rows {
+		r := rows[i]
+		out = append(out, search.Result{ModuleRow: &r})
+	}
+	return out
 }
 
 // computeModuleResults fuzz-matches the query against every row
