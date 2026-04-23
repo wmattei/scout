@@ -14,6 +14,8 @@ import (
 	"github.com/wmattei/scout/internal/awsctx/providers"
 	"github.com/wmattei/scout/internal/debuglog"
 	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/module"
+	"github.com/wmattei/scout/internal/modules"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/tui"
 	"github.com/wmattei/scout/internal/version"
@@ -93,6 +95,13 @@ func runTUI() (err error) {
 	// the switcher commit flow can populate the memory index after the
 	// user picks a profile.
 	seedTopLevelTypes()
+
+	// Build the module registry. Empty during Phase 1 until modules
+	// migrate; cmd/scout/root.go switches over to reading from it in
+	// Phase 2.
+	registry := module.NewRegistry()
+	modules.RegisterAll(registry)
+	_ = registry // silence unused during Phase 1
 
 	activity := awsctx.NewActivity()
 
