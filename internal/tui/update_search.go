@@ -34,7 +34,12 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 			return m, nil
 		}
-		m.detailsResource = visible[m.selected].Resource
+		picked := visible[m.selected]
+		if picked.ModuleRow != nil {
+			return m.enterModuleDetails(*picked.ModuleRow)
+		}
+		m.detailsResource = picked.Resource
+		m.detailsRow = nil
 		m.actionSel = 0
 		m.mode = modeDetails
 		// Record the visit for recents. Swallow errors — a failed prefs
@@ -281,6 +286,33 @@ func computeResults(query string, mem *index.Memory) []search.Result {
 		return nil
 	}
 	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
+}
+
+// enterModuleDetails transitions into modeDetails for a module-owned
+// row. Fires module.ResolveDetails as an Effect unless moduleLazy
+// already has an entry and the module doesn't declare AlwaysRefresh.
+func (m Model) enterModuleDetails(r core.Row) (tea.Model, tea.Cmd) {
+	mod, ok := m.moduleForID(r.PackageID)
+	if !ok {
+		return m, nil
+	}
+	m.detailsRow = &r
+	m.detailsResource = core.Resource{}
+	m.actionSel = 0
+	m.mode = modeDetails
+
+	key := moduleDetailKey(r.PackageID, r.Key)
+	_, haveLazy := m.moduleLazy[key]
+	if haveLazy && !mod.AlwaysRefresh() {
+		return m, nil
+	}
+	if mod.AlwaysRefresh() {
+		delete(m.moduleLazy, key)
+	}
+	ctx := m.moduleContextFor(r.PackageID)
+	eff := mod.ResolveDetails(ctx, r)
+	nm, cmd := ApplyEffect(m, eff)
+	return nm, cmd
 }
 
 // dispatchModuleScope invokes the module's HandleSearch, updates
