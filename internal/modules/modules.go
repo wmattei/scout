@@ -8,6 +8,7 @@ import (
 	"github.com/wmattei/scout/internal/modules/automation"
 	"github.com/wmattei/scout/internal/modules/ecs"
 	"github.com/wmattei/scout/internal/modules/lambda"
+	"github.com/wmattei/scout/internal/modules/s3"
 	"github.com/wmattei/scout/internal/modules/secrets"
 	"github.com/wmattei/scout/internal/modules/ssm"
 )
@@ -16,6 +17,7 @@ import (
 // startup for commands that need module awareness (runTUI,
 // preload). cache-clear skips it.
 func RegisterAll(r *module.Registry) {
+	r.Register(s3.New())
 	r.Register(lambda.New())
 	r.Register(ssm.New())
 	r.Register(secrets.New())
