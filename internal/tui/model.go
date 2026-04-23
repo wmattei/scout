@@ -17,12 +17,21 @@ import (
 	"github.com/wmattei/scout/internal/search"
 )
 
-// lazyDetailKey identifies a single (resource type, resource key)
-// pair in the m.lazyDetails store. Used by the generic
-// services.Provider.ResolveDetails flow.
+// lazyDetailKey identifies a single resource or row in a lazy-detail
+// store. Historically keyed by (core.ResourceType, string) via the
+// services.Provider flow. During the module cutover, Type == 0 is a
+// sentinel meaning "module-owned key" and Key carries
+// "<packageID>:<rowKey>". Phase-3 retires the Type field.
 type lazyDetailKey struct {
 	Type core.ResourceType
 	Key  string
+}
+
+// moduleDetailKey builds the lazyDetailKey used to index moduleLazy
+// for a module-owned row. Mirrors the layout written by
+// modelHost.SetLazyDetails so both sides agree on the format.
+func moduleDetailKey(packageID, rowKey string) lazyDetailKey {
+	return lazyDetailKey{Key: packageID + ":" + rowKey}
 }
 
 // lazyDetailState tracks whether a given lazyDetailKey has had its
@@ -76,8 +85,11 @@ type Model struct {
 	scopedResults []search.Result
 	scopedQuery   string
 
-	// Details-mode state.
+	// Details-mode state. During the cutover, exactly one of
+	// detailsResource (legacy) / detailsRow (module path) is set for
+	// the lifetime of modeDetails.
 	detailsResource core.Resource
+	detailsRow      *core.Row
 	actionSel       int
 	// detailsHitMap holds the clickable regions for the currently-
 	// rendered Details frame. It is a pointer so the View-time
