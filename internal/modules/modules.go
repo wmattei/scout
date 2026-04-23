@@ -6,6 +6,7 @@ package modules
 import (
 	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/modules/automation"
+	"github.com/wmattei/scout/internal/modules/ecs"
 	"github.com/wmattei/scout/internal/modules/lambda"
 	"github.com/wmattei/scout/internal/modules/secrets"
 	"github.com/wmattei/scout/internal/modules/ssm"
@@ -19,4 +20,6 @@ func RegisterAll(r *module.Registry) {
 	r.Register(ssm.New())
 	r.Register(secrets.New())
 	r.Register(automation.New())
+	r.Register(ecs.NewServices())
+	r.Register(ecs.NewTaskDefs())
 }
