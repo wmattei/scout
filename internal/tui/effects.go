@@ -123,6 +123,17 @@ func (h *modelHost) SetLazyDetails(packageID, key string, lazy map[string]string
 	h.m.moduleLazy[k] = lazy
 }
 
+func (h *modelHost) OpenVirtualDetails(packageID, key, name string) {
+	h.m.virtualRow = &core.Row{PackageID: packageID, Key: key, Name: name}
+	h.m.mode = modeDetails
+}
+
+func (h *modelHost) Tick(after time.Duration, next effect.Effect) {
+	h.deferred = append(h.deferred, tea.Tick(after, func(time.Time) tea.Msg {
+		return msgEffectDone{next: next}
+	}))
+}
+
 // ApplyEffect runs the reducer against a Model and returns the new
 // Model + the batched tea.Cmd for any Async/editor/tail work queued
 // along the way. Entry point for both module HandleSearch result

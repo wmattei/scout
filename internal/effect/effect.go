@@ -125,3 +125,25 @@ func (SetLazy) effect() {}
 type None struct{}
 
 func (None) effect() {}
+
+// OpenVirtualDetails opens the Details page for a virtual row owned
+// by a module. The module is expected to recognise Key and synthesize
+// a core.Row for it in BuildDetails. Used by Automation to open an
+// execution detail view from a runbook's Events zone.
+type OpenVirtualDetails struct {
+	PackageID string
+	Key       string
+	Name      string
+}
+
+func (OpenVirtualDetails) effect() {}
+
+// Tick fires Then after After elapses. Used by modules that need
+// recurring polling (Automation execution status). Implemented via
+// tea.Tick in the reducer Host.
+type Tick struct {
+	After time.Duration
+	Then  Effect
+}
+
+func (Tick) effect() {}

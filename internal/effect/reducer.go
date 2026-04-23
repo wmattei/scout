@@ -1,6 +1,10 @@
 package effect
 
-import "github.com/wmattei/scout/internal/core"
+import (
+	"time"
+
+	"github.com/wmattei/scout/internal/core"
+)
 
 // Host is the callback surface the reducer uses to mutate UI-owned
 // state. Implemented by the tui package's Model-wrapper. Keeping this
@@ -16,6 +20,8 @@ type Host interface {
 	SetModuleState(packageID string, state State)
 	UpsertCacheRows(rows []Row)
 	SetLazyDetails(packageID, key string, lazy map[string]string)
+	OpenVirtualDetails(packageID, key, name string)
+	Tick(after time.Duration, next Effect)
 }
 
 // Row re-exports core.Row so the Host interface stays importable by
@@ -76,6 +82,10 @@ func Reduce(eff Effect, host Host, runAsync AsyncRunner, openEditor EditorOpener
 		host.UpsertCacheRows(toHostRows(e.Rows))
 	case SetLazy:
 		host.SetLazyDetails(e.PackageID, e.Key, e.Lazy)
+	case OpenVirtualDetails:
+		host.OpenVirtualDetails(e.PackageID, e.Key, e.Name)
+	case Tick:
+		host.Tick(e.After, e.Then)
 	}
 }
 

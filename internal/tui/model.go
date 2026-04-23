@@ -183,6 +183,11 @@ type Model struct {
 	// effect. When the editor closes with saved content, this
 	// produces the next Effect to reduce.
 	pendingEditorEffectOnSave func([]byte) effect.Effect
+
+	// virtualRow, when non-nil, is a module-owned synthetic row used
+	// for Details rendering (Automation execution detail view).
+	// Populated by the OpenVirtualDetails effect; cleared on Esc.
+	virtualRow *core.Row
 }
 
 // executionState bundles every field that is only meaningful while the
