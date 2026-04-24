@@ -1,285 +1,291 @@
 # scout
 
-Interactive terminal TUI for navigating and managing AWS infrastructure. Fuzzy-searchable cache over S3 buckets, ECS services/task definitions, Lambda functions, and SSM parameters — with live prefix search into S3 bucket contents, real-time log tailing, and interactive actions (deploy, invoke, update).
+Interactive terminal TUI for navigating and managing AWS infrastructure. Fuzzy-searchable cache over S3 buckets, ECS services/task definitions, Lambda functions, SSM parameters, Secrets Manager, and SSM Automation runbooks — with live prefix search into S3 bucket contents, real-time log tailing, and interactive actions (deploy, invoke, update).
 
 ## Quick start
 
 ```bash
 go build -o bin/scout ./cmd/scout
 ./bin/scout                              # launch TUI
-./bin/scout preload all                  # populate cache
-./bin/scout preload --limit 50 s3        # selective preload
-./bin/scout cache clear                  # wipe local cache
-SCOUT_DEBUG=1 ./bin/scout           # enable debug log
+./bin/scout cache clear                  # wipe local cache (prefs preserved)
+SCOUT_DEBUG=1 ./bin/scout                # enable debug log
 ```
 
 ## Architecture overview
 
 ```
-cmd/scout/           Binary entry point, subcommand dispatch
+cmd/scout/                Binary entry point, subcommand dispatch, panic recovery
 internal/
-  core/                   Root of dependency graph — Resource, ResourceType
-  services/               Provider interface + process-global registry
+  core/                   Row — the single shared record type
+  effect/                 Effect union + pure Reducer + Host interface
+  widget/                 Block interface + KeyValue/StatusPill/EventList/Raw
+  cache/                  SQLite shared cache (Row-keyed, orphan purge)
+  module/                 Module interface, Manifest, Registry, Context
+  modules/                One subpackage per feature module:
+    s3/                     buckets, folders, objects (single module, drill-in state)
+    lambda/                 functions
+    ssm/                    parameters
+    secrets/                Secrets Manager (masked-by-default Reveal toggle)
+    automation/             SSM Automation documents + virtual-row executions
+    ecs/                    services + task-def families (two Modules, one package)
   awsctx/                 AWS SDK wiring — Context, Activity, ListOptions
-    ecs/                  ECS adapters + providers (services, task defs)
-    s3/                   S3 adapters + providers (buckets, folders, objects)
-    lambda/               Lambda adapters + provider (functions)
-    ssm/                  SSM adapters + provider (parameters)
-    logs/                 CloudWatch Logs — StartLiveTail, GetRecentEvents
-  index/                  SQLite cache (per profile+region) + in-memory index
-  prefs/                  Per-context user prefs (favorites + recents) — separate DB
-  search/                 Fuzzy matcher, prefix matcher, scope parser
-  tui/                    Bubbletea TUI — model, views, actions, styles
+    ecs/ s3/ lambda/ ssm/ secretsmanager/ automation/    adapters (list/describe/put/...)
+    logs/                   CloudWatch Logs — StartLiveTail, GetRecentEvents
+  prefs/                  Per-context user prefs (favorites + recents) — separate SQLite file
+  search/                 Fuzzy matcher over []core.Row
+  tui/                    bubbletea Model + modelHost (implements effect.Host)
   debuglog/               Optional slog-backed debug log (SCOUT_DEBUG=1)
+  format/ version/        Small utility packages
 ```
 
 ## Dependency graph
 
 ```
 core (root — no internal imports)
-  ← services (Provider interface, registry)
-  ← search (scope parser, fuzzy/prefix matchers)
-  ← index (SQLite DB, in-memory Memory)
-  ← awsctx (AWS SDK config, activity middleware)
-    ← awsctx/s3, awsctx/ecs, awsctx/lambda, awsctx/ssm, awsctx/logs
-  ← tui (bubbletea Model, views, actions)
-  ← cmd/scout (binary, subcommands)
+  ← effect          (Effect types + pure reducer + Host interface)
+  ← widget          (Block + KeyValue/StatusPill/EventList/Raw; imports effect for Level)
+  ← cache           (SQLite Row store + orphan purge)
+  ← awsctx          (SDK config, activity middleware)
+    ← awsctx/s3, awsctx/ecs, awsctx/lambda, awsctx/ssm, awsctx/secretsmanager, awsctx/automation, awsctx/logs
+  ← module          (Manifest + Module interface + Registry; imports effect, widget, awsctx, cache)
+  ← modules/*       (each imports module, effect, widget, core, awsctx/<its-service>)
+  ← prefs           (core + sqlite driver)
+  ← search          (core + sahilm/fuzzy)
+  ← tui             (everything above — this is where bubbletea lives)
+  ← cmd/scout       (binary: wires registry, opens cache+prefs, launches tui)
 ```
 
 **Import rules:**
-- `core` imports nothing internal (only stdlib + `fmt`)
-- `services` imports `core`, `search`, `awsctx` (for ListOptions), lipgloss
-- Provider packages (`awsctx/*`) import `services`, `core`, `awsctx`
-- `tui` imports `services`, `core`, `search`, `index`, `awsctx/*` adapters
-- `search` imports `core` (and `core.LookupAlias` for scope parsing — NOT `services`, to avoid a cycle)
-- `prefs` imports only `core` + stdlib + sqlite driver — deliberately kept free of other internal deps
-- To avoid `search → services → search` cycle, alias registration flows through `core.RegisterAlias`/`core.LookupAlias`
+- `core` imports nothing internal (only stdlib).
+- `effect` imports `core`. The reducer is pure — side effects (clipboard, browser, tea.ExecProcess) happen in the `Host` implementation, which lives in `tui`.
+- `widget` imports `effect` (for `Level` on `StatusPill`) and lipgloss.
+- `module` imports `core`, `effect`, `widget`, `awsctx`, `cache`.
+- `modules/*` import `module`, `effect`, `widget`, `core`, `awsctx`, `awsctx/<their service>`. Feature modules never import `tui`.
+- `tui` is the only package that imports bubbletea. It implements `effect.Host`.
 
-## Adding a new AWS service
+## Adding a new module
 
-The service-provider registry makes this a contained change:
+A scout feature is a Go package under `internal/modules/<name>/` that implements the `module.Module` interface. Adding one requires no edits outside the module's own directory except a single-line `Register(...)` call.
 
-### 1. Define the ResourceType (1 line)
-
-`internal/core/resource.go` — add to the `const` block and the `String()` switch:
-```go
-RTypeMyNewService
-```
-
-### 2. Add parseType case (1 line)
-
-`internal/index/db.go` — add to `parseType`:
-```go
-case "my_new_service": return core.RTypeMyNewService
-```
-
-### 3. Create the adapter + provider package
+### 1. Create the package
 
 ```
-internal/awsctx/myservice/
-  list.go                  — ListMyThings(ctx, ac, opts) ([]core.Resource, error)
-  describe.go              — GetMyThing(ctx, ac, name) (*Details, error)  [optional]
-  provider_mythings.go     — implements services.Provider, init() registers
+internal/modules/myservice/
+  myservice.go   — Manifest + the struct that implements Module
+  search.go      — HandleSearch + list-adapter Async
+  details.go     — ResolveDetails + BuildDetails (zone builders)
+  actions.go     — Actions(r) → []module.Action
 ```
 
-The provider file implements `services.Provider`. Embed `services.BaseProvider` for sensible defaults, then override:
+### 2. Implement `module.Module`
 
-| Method | Required? | What it does |
-|---|---|---|
-| `Type()` | yes | Return your `core.RTypeMyNewService` |
-| `Aliases()` | yes | `[]string{"mysvc", "ms"}` for `mysvc:` scope |
-| `TagLabel()` | yes | Short tag like `"SVC"` (max 4 chars) |
-| `TagStyle()` | yes | lipgloss color for the tag chip |
-| `SortPriority()` | yes | Lower = earlier in mixed result lists |
-| `IsTopLevel()` | yes | `true` if it shows in unified search |
-| `ARN(r, lazy)` | yes | Build the ARN string |
-| `ConsoleURL(r, region, lazy)` | yes | AWS console deep link |
-| `RenderMeta(r)` | yes | Right-aligned column in result rows |
-| `ListAll(ctx, ac, opts)` | yes | Your list adapter call |
-| `TabComplete(scope, r)` | override if drillable | Default returns `r.DisplayName` |
-| `URI(r)` | override if copyable | Default returns `("", false)` |
-| `ResolveDetails(ctx, ac, r)` | override for details | Return `map[string]string` for lazy store |
-| `DetailRows(r, lazy)` | override for details | Return `[]services.DetailRow` |
-| `LogGroup(r, lazy)` | override if tailable | Return CloudWatch log group name |
-| `PollingInterval()` | override for live data | Default 0 (no polling) |
-| `AlwaysRefresh()` | override for live data | Default false |
+The interface, in `internal/module/module.go`:
 
-### 4. Expose a `Register()` function and wire it
+| Method                        | Purpose                                                              |
+|-------------------------------|----------------------------------------------------------------------|
+| `Manifest()`                  | Static description — ID, Name, Aliases, Tag, TagStyle, SortPriority. |
+| `HandleSearch(ctx, q, state)` | Per-keystroke. Returns rows + newState + effects (Async for live fetch). |
+| `ARN(r)`                      | ARN for Identity zone + generic Copy ARN action.                     |
+| `ConsoleURL(r, region)`       | Open-in-browser deep link.                                           |
+| `ResolveDetails(ctx, r)`      | Effect fired on Enter. Typically Async{Describe…} → SetLazy.         |
+| `BuildDetails(ctx, r, lazy)`  | Fills the 5-zone DetailZones (Status/Metadata/Value/Events).         |
+| `Actions(r)`                  | Returns `[]module.Action`. Each `Run(ctx, r) effect.Effect`.         |
+| `HandleEvent(ctx, r, id)`     | Fired on Enter in a selectable Events-zone row.                      |
+| `PollingInterval()`           | > 0 re-fires `ResolveDetails` on a timer.                            |
+| `AlwaysRefresh()`             | true = drop lazy and re-resolve on every Details entry.              |
 
-In your provider package, expose an exported `Register()` that calls
-`services.Register(&yourProvider{})` for every provider in the package:
+### 3. Register it
+
+In `internal/modules/modules.go`:
 
 ```go
-// internal/awsctx/myservice/register.go
-func Register() { services.Register(&myServiceProvider{}) }
+func RegisterAll(r *module.Registry) {
+    r.Register(s3.New())
+    r.Register(lambda.New())
+    ...
+    r.Register(myservice.New())
+}
 ```
 
-Then add a call in `internal/awsctx/providers/providers.go`:
-
-```go
-myservice.Register()
-```
-
-Registration is explicit (not `init()`-based) so commands that don't
-need AWS access — like `scout cache clear` — avoid paying the cost
-and avoid the dependency.
-
-### 5. Add actions (a few lines)
-
-`internal/tui/actions.go` — add a case to `ActionsFor`:
-```go
-case core.RTypeMyNewService:
-    return []Action{
-        {Label: "Open in Browser", Execute: execOpenInBrowser},
-        {Label: "Copy ARN", Execute: execCopyARN},
-    }
-```
-
-### That's it
-
-No edits to `tui/styles.go`, `tui/results.go`, `tui/browser.go`, `tui/commands.go`, `index/memory.go`, or any other file. The registry handles tag rendering, meta columns, console URLs, Tab completion, preload subcommand support, and scoped search (`mysvc:query`) automatically.
+That's it. The registry handles tag rendering, fuzzy-search inclusion, scope-prefix routing (`myservice:`), cache orphan purge, and details/action dispatch automatically.
 
 ## Key abstractions
 
-### `services.Provider` interface
+### `core.Row`
 
-The central abstraction. One implementation per resource type. Lives alongside the SDK adapters it wraps. Registered via `init()` + `services.Register()`.
+Every cached record. Shape: `{PackageID, Key, Name, Meta map[string]string}`. Fuzzy search matches on `Name`. `PackageID` is the module's manifest ID; `(PackageID, Key)` is the cache primary key. `Meta` is opaque to core — modules own their meta keys.
 
-### `core.Resource`
+### `module.Module` + `module.Manifest`
 
-Unified record for anything browsable. `Type` is the discriminator. `Key` uniquely identifies within `(profile, region, type)`. `DisplayName` is what the TUI renders. `Meta` is a `map[string]string` bag for type-specific fields (region, cluster, runtime, etc.).
+The Module interface is the only place the TUI looks for feature behaviour. The Registry (`internal/module/registry.go`) keeps a process-global map from manifest ID → Module plus an alias → ID lookup table driven by `Manifest.Aliases`.
 
-### Lazy details (`lazyDetails` + `lazyDetailsState`)
+### Effect system
 
-When the user opens a Details view, the Enter handler fires `Provider.ResolveDetails()` as a `tea.Cmd`. The result lands in `m.lazyDetails[lazyDetailKey{Type, Key}]` as a `map[string]string`. Providers that return `AlwaysRefresh() = true` re-fire on every entry. Providers with `PollingInterval() > 0` auto-refresh on a timer while the Details view is open.
+`effect.Effect` is a sealed union implemented by `Copy`, `Browser`, `Toast`, `Editor`, `Confirm`, `TailLogs`, `Async`, `Batch`, `SetState`, `UpsertCache`, `SetLazy`, `OpenVirtualDetails`, `Tick`, `None`. Modules return Effects from `HandleSearch`, `Action.Run`, `HandleEvent`, and `ResolveDetails`. The pure `effect.Reduce` function dispatches to `effect.Host`, which `tui/effects.go` implements against `*Model`. Side effects (clipboard writes, OS shell-outs, `tea.ExecProcess`) live inside the tea.Cmd closures the reducer queues — keeping `effect/` bubbletea-free.
+
+### `cache` — shared SQLite store
+
+`internal/cache/cache.go` holds a single `rows` table keyed by `(package_id, row_key)`. Modules call `Upsert`, `RowsByPackage`, and `Query(packageID, prefix)`. S3 drill-in uses `Query` with prefix `"o:<bucket>/<path>"`. `PurgeOrphans(liveIDs)` runs at startup once the registry is populated — rows belonging to retired modules get dropped.
+
+Cache DB path: `~/.cache/scout/<profile>__<region>.db` (or `$XDG_CACHE_HOME/scout/...`). Schema-version mismatch drops + recreates — the cache is rebuildable.
+
+### `widget` — zone content blocks
+
+`Block` is the widget interface (`Render(w, h) string`, `ClickableRegions() []ClickRegion`). Concrete widgets: `KeyValue`, `StatusPill`, `EventList`, `Raw`, and the zero `Empty`. Modules compose these into `module.DetailZones{Status, Metadata, Value, Events}`. Core wraps each non-empty zone in a titled bordered panel (see `tui/details_module.go`).
+
+### Lazy details
+
+When the user enters Details on a row, the Enter handler calls `module.ResolveDetails(ctx, r)` → typically an Async effect wrapping a Describe call → returns `SetLazy{PackageID, Key, Lazy}`. The lazy map lands on `m.lazyDetails[moduleDetailKey(PackageID, Key)]` and `BuildDetails` reads it on every frame. `AlwaysRefresh()=true` modules drop their lazy entry on every entry so the "resolving…" placeholder shows until the re-fetch lands. `PollingInterval() > 0` → core re-fires `ResolveDetails` on a timer (Automation executions use this via the `Tick` effect).
 
 ### Service scopes
 
-Typing `<alias>:` in the search bar restricts results to one resource type. The scope parser (`search.ParseScope`) detects the colon, looks up the alias via `core.LookupAlias`, and the TUI dispatches to `memory.ByType()` for fuzzy matching. First entry per alias per session fires a live `Provider.ListAll()` fetch.
+Typing `<alias>:` (or any `Manifest.Aliases` entry) dispatches per-keystroke to `module.HandleSearch(ctx, rest, state)`. First-entry Async in the returned effects populates the shared cache; subsequent keystrokes paint instantly from cache and re-fire the Async only if the module wants to.
+
+### Virtual rows
+
+Some modules (Automation) expose synthetic rows that don't come from `HandleSearch`. The `effect.OpenVirtualDetails{PackageID, Key, Name}` effect (usually returned from `HandleEvent` on a selectable Events-zone row) sets `m.virtualRow = &core.Row{...}` and jumps into Details. `BuildDetails` branches on a Key prefix (e.g. `"exec:"`) to render an execution-detail page instead of the document page.
 
 ### Tail logs
 
-`modeTailLogs` takes over the frame with a `bubbles/viewport`. Historical events are pre-fetched via `FilterLogEvents` (last 50 events, 30min window), followed by a `────── live ─▶` divider, then `StartLiveTail` streams events in real time. Users can scroll up (auto-follow pauses), press `Ctrl+↓` to resume, and press `/` to filter by substring.
+`effect.TailLogs{LogGroup}` enters `modeTailLogs`. The actual stream is `awslogs.StartLiveTail` — historical events are pre-fetched (last 50 in 30 min), then live events stream in. Auto-follow pauses on scroll-up; `Ctrl+↓` resumes; `/` filters by substring.
 
 ### Editor integration
 
-Interactive actions (Lambda Run, SSM Update Value) suspend the TUI via `tea.ExecProcess`, open `$EDITOR` on a temp file, and resume on editor close. The handler checks file mtime to detect "quit without saving" and validates JSON for Lambda payloads.
+`effect.Editor{Prefill, OnSave}` writes `Prefill` to a temp file, suspends the TUI via `tea.ExecProcess`, runs `$EDITOR`. On exit, file content is read and passed to `OnSave`, whose returned `Effect` is reduced via `msgEffectDone` — the caller can chain `Async{PutParameter}` or similar.
 
-### Favorites and Recents (per-context user preferences)
+### Favorites and Recents
 
-`internal/prefs/` owns a second SQLite file per `(profile, region)` pair — `<profile>__<region>__prefs.db` — storing the user's favorites (pinned with `f`) and the last-10 resources whose Details view they entered. The TUI holds a `*prefs.DB` and a `*prefs.State` (in-memory snapshot) on the `Model` and consults the state from:
+`internal/prefs/` holds a second SQLite file per context: `<profile>__<region>__prefs.db`. Tables are `favorites` and `recents`, both keyed on `(package_id, row_key)` with a `display` snapshot. Pressing `f` on a row in search mode or Details toggles favorite; entering Details auto-marks visited. The home page (empty input + at least one favorite/recent) renders favorites and recents as `search.Result{Row: core.Row{...}}` rebuilt from the prefs state. `scout cache clear` preserves `*__prefs.db` files.
 
-- the home page (`tui/home.go`) rendered on empty input,
-- the search ranker (`tui/ranking.go`) which sorts favorites ahead of non-favorites,
-- the row renderer (`tui/results.go`) which prepends `★ ` to favorited rows,
-- the hint line (`tui/hint.go`) that advertises the `f` shortcut above the status bar.
+### Switcher (Ctrl+P)
 
-`scout cache clear` does NOT touch prefs files. Context-switch (Ctrl+P) closes the old prefs DB and opens the new one.
-
-### Zoned Details UI
-
-`tui/details.go` renders the Details view as a dashboard of lipgloss bordered zones: **Identity** top-left (Name, color-coded type chip via `Provider.TagStyle()`, ARN), **Status** top-center (prominent state rows), **Metadata** top-right (the per-provider key/value bag), **Events** bottom-right (variable-length event stream), **Actions** bottom-left (numbered action list). Below 75 columns the zones stack vertically in the same order.
-
-Providers opt rows into zones via `services.DetailRow.Zone` (`ZoneStatus`, `ZoneEvents`, default `ZoneMetadata`). Any DetailRow can be marked `Clickable: true` to render underlined dim-blue and become copy-on-click. `Name` and `ARN` in Identity are always clickable. Click dispatch happens in the top-level `Update` handler via `tea.MouseMsg`; `renderDetails` publishes a `[]clickRegion` into a pointer-valued slice on the Model (`m.detailsHitMap`) on every frame.
-
-Keyboard behaviour is unchanged — mouse clicks only copy; every existing shortcut (number hotkeys, Enter, `f`, Esc, Ctrl+P) still routes through the keyboard path.
+Opens an overlay to pick profile + region. Commit resets `moduleState`, `lazyDetails`, closes the old cache handle, reopens for the new context, and re-runs orphan purge. Legacy `index.DB` handles are gone; cache + prefs are the only SQLite files scout manages.
 
 ## File reference
 
 ### `cmd/scout/`
 
-| File | Purpose |
-|---|---|
-| `main.go` | Subcommand dispatch, panic recovery, debuglog init, TUI launch |
-| `preload.go` | `scout preload` subcommand with `--limit` and `--prefix` flags |
+| File       | Purpose                                                                       |
+|------------|-------------------------------------------------------------------------------|
+| `main.go`  | Cobra entry point.                                                            |
+| `root.go`  | `rootCmd` builder, panic recovery, `runTUI` (opens cache + prefs, launches). |
+| `cache.go` | `scout cache clear` — wipes `*.db` except `*__prefs.db`.                     |
 
 ### `internal/tui/`
 
-| File | Purpose |
-|---|---|
-| `model.go` | Bubbletea Model struct + `Init()` + lazy-detail types + helper accessors |
-| `update.go` | `Update()` dispatcher — routes to per-mode key handlers and per-message handlers; also holds mouse routing and `spinTickCmd` |
-| `update_search.go` | `updateSearch` + `recomputeResults` + scope helpers (readScopedCache, clampSelected, deleteLastPathSegment, schedulePollIfNeeded, computeResults, visibleSearchResults) |
-| `update_details.go` | `updateDetails` + `runAction` + `toggleFavoriteForResource` |
-| `update_tail.go` | `updateTail` + viewport helpers (rebuildTailViewport, formatTailLine) |
-| `update_switcher.go` | `updateSwitcher` — profile/region overlay key handling |
-| `update_messages.go` | Async tea.Msg handlers — handleResourcesUpdated, handleActionDone, handleEditorClosed, handleLazyDetailsResolved, handleAutomationStarted, handleTailStarted/Event, handleSwitcherCommitted, handleSpinTick, summarizeErrors |
-| `view.go` | `View()` — frame composition, mode dispatch, toast overlay |
-| `details.go` | Details panel renderer — Name/ARN + provider DetailRows + Actions list |
-| `results.go` | Search result list renderer — tag chips, highlights, meta columns |
-| `status.go` | Status bar — profile, region, account, activity spinner |
-| `tail.go` | Tail Logs view — header, viewport, filter prompt/badge, help footer |
-| `styles.go` | Shared lipgloss styles (status bar, toast variants, divider, etc.) |
-| `toast.go` | Toast types (Info/Error/Success), constructors, `renderToast` |
-| `config.go` | `MaxDisplayedResults = 20` |
-| `mode.go` | Mode enum (search, details, tailLogs, switcher) |
-| `switcher.go` | Profile/region overlay — state, filter, render |
-| `editor.go` | `$EDITOR` integration — `openEditorCmd`, `editorAction` enum |
-| `actions.go` | `Action` struct, `ActionsFor()` switch, `msgActionDone` |
-| `action_open.go` | Open in Browser — delegates to `Provider.ConsoleURL` |
-| `action_copy.go` | Copy URI / Copy ARN — delegates to `Provider.URI` / `Provider.ARN` |
-| `action_force_deploy.go` | ECS Force Deploy with y/n confirmation gate |
-| `action_download.go` | S3 object download to `~/Downloads` |
-| `action_preview.go` | S3 object preview via temp file + OS viewer |
-| `action_tail.go` | Tail Logs — resolves log group, enters `modeTailLogs` |
-| `action_lambda_run.go` | Lambda Invoke via `$EDITOR` JSON payload |
-| `action_ssm.go` | SSM Copy Value + Update Value (via `$EDITOR`) |
-| `commands.go` | Async `tea.Cmd` factories — scoped search, service refresh, lazy resolve, tail pump |
-| `browser.go` | `openInBrowser()` — OS shell-out (`open` / `xdg-open`) |
-| `clipboard.go` | `copyToClipboard()` — atotto/clipboard wrapper |
-| `downloads.go` | XDG-aware downloads directory resolver |
-| `preview.go` | Temp file creation + format allowlist for Preview |
-| `width.go` | `lipglossWidth()` shim |
+| File                   | Purpose                                                                            |
+|------------------------|------------------------------------------------------------------------------------|
+| `model.go`             | Model struct + `NewModel` + `Init`; holds moduleState, lazyDetails, virtualRow.    |
+| `update.go`            | `Update` dispatcher — key routing + per-message handlers.                          |
+| `update_search.go`     | `updateSearch`, `recomputeResults`, `enterModuleDetails`, `dispatchModuleScope`.   |
+| `update_details.go`    | `updateDetails` + `handleModuleDetailsKey` (navigation + action dispatch).         |
+| `update_tail.go`       | Tail-logs key handling + viewport helpers.                                         |
+| `update_switcher.go`   | Profile/region overlay.                                                            |
+| `update_messages.go`   | Async message handlers — tail, switcher, spin tick.                                |
+| `effects.go`           | `modelHost` (implements `effect.Host`), `ApplyEffect`, editor + tail tea.Cmds.     |
+| `modules.go`           | `moduleForAlias`, `moduleForID`, `scopeFromInput` — the registry facade.           |
+| `cache_bridge.go`      | `Model.reopenModuleCache` — called on switcher commit.                             |
+| `details.go`           | `renderDetails` dispatcher + zone-block helpers (`renderZoneBlock`, overlay).      |
+| `details_module.go`    | `renderModuleDetails` + zone renderers (Identity, Status, Metadata, Value, Events, Actions). |
+| `results.go`           | Search result list renderer.                                                       |
+| `home.go`              | Favorites + Recents home page (empty-input view).                                  |
+| `ranking.go`           | `partitionByFavorites` — stable-sort favs ahead of non-favs.                       |
+| `hint.go`              | Favorite-toggle hint line above the status bar.                                    |
+| `status.go`            | Status bar.                                                                        |
+| `tail.go`              | Tail-logs view renderer + filter prompt.                                           |
+| `toast.go`             | Toast types (Info/Success/Error) + `renderToast`.                                  |
+| `styles.go`            | Shared lipgloss styles.                                                            |
+| `switcher.go`          | Profile/region overlay renderer + state.                                           |
+| `onboarding.go`        | Initial AWS-setup screen when `awsctx.Resolve` fails.                              |
+| `view.go`              | `View` — frame composition.                                                        |
+| `mode.go`              | Mode enum (search, details, tailLogs, switcher, onboarding).                       |
+| `commands.go`          | `resolveAccountCmd`, `tailLogsStartCmd`, `tailLogsNextCmd`, `msgSwitcherCommitted`.|
+| `browser.go`           | OS shell-out.                                                                      |
+| `clipboard.go`         | atotto/clipboard wrapper.                                                          |
+| `downloads.go`         | XDG downloads directory resolver.                                                  |
+| `preview.go`           | Temp file creation + format allowlist for S3 Preview.                              |
+| `config.go`            | `MaxDisplayedResults`.                                                             |
+| `width.go`             | `lipglossWidth` shim.                                                              |
+
+### `internal/module/`
+
+| File          | Purpose                                                                      |
+|---------------|------------------------------------------------------------------------------|
+| `module.go`   | `Module` interface + `Manifest` + `DetailZones` + `Action`.                  |
+| `registry.go` | Process-global Registry (alias lookup, ID enumeration, deterministic order). |
+| `context.go`  | `Context{AWSCtx, Cache, State}` threaded into every module entry point.      |
+
+### `internal/modules/`
+
+| Package         | Aliases                                                  | Notes                                          |
+|-----------------|----------------------------------------------------------|------------------------------------------------|
+| `s3/`           | `s3`, `buckets`                                          | Single module; drill-in state encoded in query.|
+| `lambda/`       | `lambda`, `fn`, `functions`                              | Run via $EDITOR JSON payload.                  |
+| `ssm/`          | `ssm`, `param`, `params`, `parameter`                    | AlwaysRefresh=true.                            |
+| `secrets/`      | `secrets`, `secret`, `sm`, `sec`                         | Masked by default; Reveal toggles state.       |
+| `automation/`   | `auto`, `automation`, `runbook`                          | Executions are virtual rows (Key prefix `exec:`). |
+| `ecs/`          | Services: `ecs`, `svc`, `services`; Task defs: `td`, `task`, `taskdef` | Two Modules in one package; services polls 10s. |
+
+### `internal/effect/`
+
+| File          | Purpose                                                                         |
+|---------------|---------------------------------------------------------------------------------|
+| `effect.go`   | Effect union types (Copy, Browser, Toast, Editor, Confirm, TailLogs, Async, Batch, SetState, UpsertCache, SetLazy, OpenVirtualDetails, Tick, None). |
+| `reducer.go`  | `Host` interface + pure `Reduce` dispatcher + `Row` + `AsyncRunner` + `EditorOpener`. |
+| `levels.go`   | `Level` enum (Info/Success/Warning/Error).                                      |
+
+### `internal/widget/`
+
+| File            | Purpose                                                    |
+|-----------------|------------------------------------------------------------|
+| `widget.go`     | `Block` interface + `ClickRegion` + `Empty`.               |
+| `keyvalue.go`   | `KeyValue` + `KVRow` with optional `Clickable`/`ClipValue`.|
+| `pill.go`       | `StatusPill` with Level-driven colour.                     |
+| `eventlist.go`  | `EventList` + `EventRow` with `ActivationID`.              |
+| `raw.go`        | `Raw` — pre-rendered escape-hatch content.                 |
+| `style.go`      | Shared lipgloss styles.                                    |
+
+### `internal/cache/`
+
+| File         | Purpose                                                             |
+|--------------|---------------------------------------------------------------------|
+| `cache.go`   | `DB` + `Open` + `Upsert` + `AllRows` + `RowsByPackage` + `Query` + `PurgeOrphans`. |
+| `schema.go`  | Schema DDL + version constant.                                      |
+| `path.go`    | `DBPath(profile, region)` + XDG-aware base directory.               |
 
 ### `internal/awsctx/`
 
-Each service has its own subpackage with adapters + a `provider_*.go` file:
+One subpackage per AWS service — plain adapters, no module code.
 
-| Package | Provider | Aliases | Key adapters |
-|---|---|---|---|
-| `s3/` | bucketProvider, folderProvider, objectProvider | `s3:`, `buckets:` | ListBuckets, ListAtPrefix, StreamObject, HeadObject, DescribeBucket |
-| `ecs/` | ecsServiceProvider, ecsTaskDefProvider | `ecs:`, `svc:`, `td:`, `task:` | ListServices, ListTaskDefFamilies, DescribeService, DescribeFamily, ForceDeployment, CountRunningTasks |
-| `lambda/` | lambdaFunctionProvider | `lambda:`, `fn:` | ListFunctions, GetFunction, InvokeFunction |
-| `ssm/` | ssmParameterProvider | `ssm:`, `param:` | ListParameters, GetParameter, PutParameter |
-| `secretsmanager/` | secretProvider | `secrets:`, `secret:`, `sm:`, `sec:` | ListSecrets, GetSecretValue, PutSecretValue |
-| `automation/` | documentProvider | `auto:`, `automation:`, `runbook:` | ListDocuments, DescribeDocument, ListExecutions, StartExecution |
-| `logs/` | (no provider — shared utility) | — | StartLiveTail, GetRecentEvents |
-
-### `internal/index/`
-
-| File | Purpose |
-|---|---|
-| `db.go` | SQLite cache — `Open`, `LoadAll`, `UpsertResources`, `DeleteMissing`, schema |
-| `memory.go` | In-memory index — `All`, `ByType`, `Len`, `Upsert`, `DeleteMissing`, `SetTopLevelTypes` |
-| `persist.go` | `Persist()` — diff-patch upsert to both memory + SQLite |
-| `bucket_contents.go` | `UpsertBucketContents`, `QueryBucketContents` for S3 drill-in cache |
+| Package            | Key adapters                                                                                   |
+|--------------------|-----------------------------------------------------------------------------------------------|
+| `s3/`              | `ListBuckets`, `ListAtPrefix`, `StreamObject`, `HeadObject`, `DescribeBucket`                 |
+| `ecs/`             | `ListServices`, `ListTaskDefFamilies`, `DescribeService`, `DescribeFamily`, `ForceDeployment`, `CountRunningTasks` |
+| `lambda/`          | `ListFunctions`, `GetFunction`, `InvokeFunction`                                               |
+| `ssm/`             | `ListParameters`, `GetParameter`, `PutParameter`                                               |
+| `secretsmanager/`  | `ListSecrets`, `GetSecretValue`, `PutSecretValue`                                              |
+| `automation/`      | `ListDocuments`, `DescribeDocument`, `ListExecutions`, `StartExecution`, `GetExecution`, `StepLogSnapshot`, `IsTerminalStatus` |
+| `logs/`            | `StartLiveTail`, `GetRecentEvents`                                                             |
 
 ### `internal/search/`
 
-| File | Purpose |
-|---|---|
-| `scope.go` | `ParseScope()` — splits input into service scope / S3 drill-in / top-level |
-| `fuzzy.go` | `Fuzzy()` — wraps `sahilm/fuzzy` with `Result{Resource, MatchedRunes, Score}` |
-| `prefix.go` | `Prefix()` — case-sensitive prefix matcher for S3 scoped mode |
+| File         | Purpose                                                           |
+|--------------|-------------------------------------------------------------------|
+| `fuzzy.go`   | `Fuzzy(query, []core.Row, limit) []Result` — wraps sahilm/fuzzy.  |
 
-## Cache
+### `internal/prefs/`
 
-SQLite databases at `~/.cache/scout/` (or `$XDG_CACHE_HOME/scout/`), one file per `(profile, region)` pair: `<profile>__<region>.db`.
-
-Two tables: `resources` (top-level types) and `bucket_contents` (S3 folder/object drill-in cache). Schema version is pinned; mismatches drop+recreate.
-
-Cache is populated by:
-- Service-scope first-entry fetches (`s3:`, `ecs:`, etc.)
-- `scout preload <service>` subcommand
-- Opportunistic upsert of every S3 ListObjectsV2 result during drill-in
-
-No launch-time refresh. No automatic expiration. `scout cache clear` wipes everything.
+| File            | Purpose                                                                    |
+|-----------------|----------------------------------------------------------------------------|
+| `db.go`         | `DB` + `Open` + schema migration (schemaVersion=2, `(package_id, row_key)`).|
+| `favorites.go`  | `SetFavorite(core.Row)`, `UnsetFavorite(packageID, rowKey)`.               |
+| `recents.go`    | `MarkVisited(core.Row)`.                                                   |
+| `state.go`      | In-memory `State` snapshot + `IsFavorite(packageID, rowKey)`.              |
+| `rows.go`       | `FavoriteRow` + `RecentRow` (`PackageID`, `RowKey`, `Display`).            |
 
 ## Authentication
 
-Standard `aws-sdk-go-v2` credential chain. Profile resolution: `AWS_PROFILE` > `AWS_DEFAULT_PROFILE` > `default`. Region: `AWS_REGION` > `AWS_DEFAULT_REGION` > profile's configured region.
-
-`Ctrl+P` opens an in-TUI profile/region switcher that hot-swaps the AWS context without restarting.
+Standard `aws-sdk-go-v2` credential chain. Profile resolution: `AWS_PROFILE` > `AWS_DEFAULT_PROFILE` > `default`. Region: `AWS_REGION` > `AWS_DEFAULT_REGION` > profile's configured region. `Ctrl+P` opens an in-TUI profile/region switcher that hot-swaps the AWS context without restarting.
 
 ## Debug log
 
@@ -287,7 +293,7 @@ Standard `aws-sdk-go-v2` credential chain. Profile resolution: `AWS_PROFILE` > `
 
 ## Panic recovery
 
-`cmd/scout/main.go` wraps `runTUI()` in a `defer recover()` that writes a stack dump to `~/.cache/scout/crash.log` and returns a clean error to stderr.
+`cmd/scout/root.go` wraps `runTUI` in a `defer recover()` that writes a stack dump to `~/.cache/scout/crash.log` and returns a clean error to stderr.
 
 ## Testing policy
 
@@ -295,24 +301,22 @@ v0 has no automated tests. Quality gate is manual smoke testing. Every commit bu
 
 ## Code style
 
-- No tests yet — v0 POC policy
-- No auto-formatting enforced (standard `gofmt` applies)
-- Providers own their own lipgloss styles (no cross-package style imports)
-- Actions live in `internal/tui/action_*.go` — one file per action group
-- The `ActionsFor()` switch in `tui/actions.go` is the ONE intentional type-switch; all others go through the `services.Provider` registry
-- `core.Resource.Meta` is a `map[string]string` bag — type-specific field names are documented per provider
-- Lazy details use `map[string]string` with JSON-encoded slices/maps for multi-value fields
-- Toast levels: Info (purple), Error (red), Success (green)
-- Destructive actions use a generic `pendingConfirmType` enum for y/n confirmation
+- No tests yet — v0 POC policy.
+- Standard `gofmt`.
+- Modules own their own lipgloss styles in `Manifest.TagStyle`.
+- The only intentional type-switch outside the module registry is `BuildDetails` inside a module branching on row kind (e.g. S3 `Meta["kind"]`, Automation `Key` prefix). Everything else routes through `module.Module`.
+- `core.Row.Meta` is `map[string]string` — modules document their meta keys in the module file. Multi-value fields are JSON-encoded into the bag.
+- Toast levels: Info (purple), Success (green), Warning (yellow), Error (red).
+- Destructive actions use `effect.Confirm` + a y/n gate.
 
 ## Known limitations
 
-| Area | Limitation | Future fix |
-|---|---|---|
-| Windows | `open`/`xdg-open` not supported; clipboard needs `xclip`/`xsel`/`wl-clipboard` on Linux | Add `cmd /c start` branch |
-| Download dir | XDG path with `$HOME/Downloads` fallback | Config file override |
-| Preview formats | jpg, jpeg, png, txt, csv only | Pluggable format registry |
-| Temp files | Not cleaned up by the program | OS temp lifecycle handles it |
-| ECS services | DescribeServices runs on every ListServices call | Lazy describe on Details entry only |
-| Cache | No TTL, no size limit, no auto-expiration | Configurable retention |
-| Tests | None | v1 priority |
+| Area              | Limitation                                                                        | Future fix                              |
+|-------------------|-----------------------------------------------------------------------------------|-----------------------------------------|
+| Windows           | `open`/`xdg-open` not supported; clipboard needs `xclip`/`xsel`/`wl-clipboard` on Linux | Add `cmd /c start` branch.        |
+| Download dir      | XDG path with `$HOME/Downloads` fallback.                                         | Config file override.                   |
+| Preview formats   | jpg, jpeg, png, txt, csv only.                                                    | Pluggable format registry.              |
+| Temp files        | Not cleaned up by the program.                                                    | OS temp lifecycle handles it.           |
+| ECS services      | DescribeServices runs on every ListServices call.                                 | Lazy describe on Details entry only.    |
+| Cache             | No TTL, no size limit, no auto-expiration.                                        | Configurable retention.                 |
+| Tests             | None.                                                                             | v1 priority.                            |

@@ -14,8 +14,8 @@ import (
 )
 
 // RegisterAll populates the registry. Called from cmd/scout at
-// startup for commands that need module awareness (runTUI,
-// preload). cache-clear skips it.
+// startup for commands that need module awareness (runTUI).
+// cache-clear skips it.
 func RegisterAll(r *module.Registry) {
 	r.Register(s3.New())
 	r.Register(lambda.New())
