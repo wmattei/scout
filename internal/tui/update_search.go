@@ -7,9 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/wmattei/scout/internal/index"
+	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/search"
-	"github.com/wmattei/scout/internal/services"
 )
 
 // updateSearch handles key events while in modeSearch.
@@ -33,30 +32,8 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 			return m, nil
 		}
-		m.detailsResource = visible[m.selected].Resource
-		m.actionSel = 0
-		m.mode = modeDetails
-		// Record the visit for recents. Swallow errors — a failed prefs
-		// write shouldn't block entering Details; worst case is this
-		// resource doesn't show up in Recents next launch.
-		if m.prefs != nil {
-			_ = m.prefs.MarkVisited(m.prefsState, m.detailsResource)
-		}
-		// Generic lazy-detail resolution. Every provider that has a
-		// non-trivial ResolveDetails participates.
-		key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
-		if p, ok := services.Get(m.detailsResource.Type); ok {
-			if m.lazyDetailsState[key] == lazyStateNone || p.AlwaysRefresh() {
-				if p.AlwaysRefresh() {
-					// Drop any stale cached map so DetailRows sees empty
-					// lazy and renders the "resolving…" placeholder.
-					delete(m.lazyDetails, key)
-				}
-				m.lazyDetailsState[key] = lazyStateInFlight
-				return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
-			}
-		}
-		return m, nil
+		picked := visible[m.selected]
+		return m.enterModuleDetails(picked.Row)
 	case "tab":
 		return m.handleTab()
 	case "ctrl+p":
@@ -80,7 +57,8 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 			return m, nil
 		}
-		_, toast := m.toggleFavoriteForResource(visible[m.selected].Resource)
+		picked := visible[m.selected]
+		_, toast := m.toggleFavoriteForRow(picked.Row)
 		m.toast = toast
 		return m, nil
 	}
@@ -91,24 +69,15 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.recomputeResults(cmd)
 }
 
-// handleTab implements Tab drill-in. When a bucket or folder row is
-// selected, Tab replaces the input value with that row's full path and
-// appends a trailing `/` so the scope advances on the next recompute.
-// For leaf rows Tab replaces with the row's name without a trailing
-// separator.
+// handleTab implements Tab drill-in. Replaces the input value with the
+// selected row's name so the scope advances on the next recompute.
 func (m Model) handleTab() (tea.Model, tea.Cmd) {
 	visible := m.visibleSearchResults()
 	if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 		return m, nil
 	}
-	row := visible[m.selected].Resource
-
-	scope := search.ParseScope(m.input.Value())
-	newInput := row.DisplayName
-	if p, ok := services.Get(row.Type); ok {
-		newInput = p.TabComplete(scope, row)
-	}
-	m.input.SetValue(newInput)
+	row := visible[m.selected]
+	m.input.SetValue(row.Row.Name)
 	m.input.CursorEnd()
 	return m.recomputeResults(nil)
 }
@@ -117,50 +86,20 @@ func (m Model) handleTab() (tea.Model, tea.Cmd) {
 // and returns the combined tea.Cmd for text-input update and any
 // follow-up scoped-search command.
 func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	scope := search.ParseScope(m.input.Value())
-
-	// Service-scope mode ("s3:", "ecs:", "td:" etc.). First time the
-	// session sees a given alias, fire a live fetch; subsequent
-	// keystrokes under the same alias just re-filter in memory.
-	if scope.HasService {
-		m.results = partitionByFavorites(
-			search.Fuzzy(scope.ServiceQuery, m.memory.ByType(scope.Service), MaxDisplayedResults),
-			m.prefsState,
-		)
-		m.scopedResults = nil
-		m.scopedQuery = ""
-		m.clampSelected()
-		if _, already := m.serviceScopeFetched[scope.ServiceAlias]; already {
-			return m, cmd
-		}
-		m.serviceScopeFetched[scope.ServiceAlias] = struct{}{}
-		refresh := refreshServiceCmd(m.awsCtx, m.db, m.memory, scope.Service)
-		if cmd != nil {
-			return m, tea.Batch(cmd, refresh)
-		}
-		return m, refresh
+	// Module path: when the input is "<alias>:<query>" and alias is
+	// owned by a module, dispatch to module.HandleSearch and short-
+	// circuit the top-level fuzzy below.
+	if alias, rest, ok := m.scopeFromInput(m.input.Value()); ok {
+		return m.dispatchModuleScope(alias, rest, cmd)
 	}
 
-	if scope.IsTopLevel() {
-		m.results = partitionByFavorites(computeResults(m.input.Value(), m.memory), m.prefsState)
-		m.scopedResults = nil
-		m.scopedQuery = ""
-		m.clampSelected()
-		return m, cmd
-	}
-
-	// Scoped mode: read the SQLite cache synchronously for an instant
-	// first paint, then fire the live fetch as a tea.Cmd to augment
-	// and persist.
-	m.results = nil
-	m.scopedResults = readScopedCache(m.db, scope)
+	// Top-level fuzzy search over cached module rows.
+	modRows := m.computeModuleResults(m.input.Value())
+	m.results = partitionByFavorites(modRows, m.prefsState)
+	m.scopedResults = nil
 	m.scopedQuery = ""
 	m.clampSelected()
-	scoped := scopedSearchCmd(m.awsCtx, m.db, m.input.Value())
-	if cmd != nil {
-		return m, tea.Batch(cmd, scoped)
-	}
-	return m, scoped
+	return m, cmd
 }
 
 // deleteLastPathSegment trims the trailing segment of a breadcrumb input,
@@ -182,65 +121,27 @@ func deleteLastPathSegment(input string) string {
 	return ""
 }
 
-// schedulePollIfNeeded returns a tea.Tick that will fire msgPollDetails
-// after the provider's PollingInterval if the user is still in
-// modeDetails looking at the resource that just resolved. Returns nil
-// when polling is disabled, the user has left Details, or the resolved
-// resource doesn't match the currently-displayed one.
-func schedulePollIfNeeded(m Model, key lazyDetailKey) tea.Cmd {
-	if m.mode != modeDetails {
-		return nil
-	}
-	if key.Type != m.detailsResource.Type || key.Key != m.detailsResource.Key {
-		return nil
-	}
-	p, ok := services.Get(key.Type)
-	if !ok {
-		return nil
-	}
-	interval := p.PollingInterval()
-	if interval <= 0 {
-		return nil
-	}
-	return tea.Tick(interval, func(time.Time) tea.Msg {
-		return msgPollDetails{key: key}
-	})
-}
-
-// readScopedCache does a synchronous SQLite read of bucket_contents for
-// the given scope and returns prefix-matched results ready to drop into
-// m.scopedResults.
-func readScopedCache(db *index.DB, scope search.Scope) []search.Result {
-	if scope.Bucket == "" {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	cached, err := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
-	if err != nil {
-		return nil
-	}
-	return search.Prefix(scope.Leaf, cached, MaxDisplayedResults)
-}
-
-// isLoadingScoped reports whether an S3 drill-in search is in flight.
-// Service-scope mode is explicitly excluded — its loading affordance
-// is the status-bar spinner.
+// isLoadingScoped reports whether a module-scoped search is in flight —
+// i.e. the scoped query hasn't caught up with the current input yet.
+// Service-scope mode's loading affordance is the status-bar spinner;
+// this is only consulted while a module owns the current alias.
 func (m Model) isLoadingScoped() bool {
-	scope := search.ParseScope(m.input.Value())
-	return scope.Bucket != "" && m.scopedQuery != m.input.Value()
+	_, _, ok := m.scopeFromInput(m.input.Value())
+	if !ok {
+		return false
+	}
+	return m.scopedQuery != m.input.Value()
 }
 
 // visibleSearchResults returns whichever result list is currently active
 // so arrow keys and Enter operate on the same set the user is seeing.
 //
 // Selection priorities:
-//  1. S3 drill-in mode (scope.Bucket != "") → m.scopedResults.
+//  1. Scoped-mode results (module-scope HandleSearch output).
 //  2. Empty input + at least one favorite or recent → home rows.
 //  3. Otherwise → m.results.
 func (m Model) visibleSearchResults() []search.Result {
-	scope := search.ParseScope(m.input.Value())
-	if scope.Bucket != "" {
+	if len(m.scopedResults) > 0 {
 		return m.scopedResults
 	}
 	if homeActive(m) {
@@ -264,11 +165,111 @@ func (m *Model) clampSelected() {
 	}
 }
 
-// computeResults returns fuzzy match results for a TOP-LEVEL query, or
-// an empty slice if the query is empty.
-func computeResults(query string, mem *index.Memory) []search.Result {
-	if query == "" {
+// enterModuleDetails transitions into modeDetails for a module-owned
+// row. Fires module.ResolveDetails as an Effect unless lazyDetails
+// already has an entry and the module doesn't declare AlwaysRefresh.
+func (m Model) enterModuleDetails(r core.Row) (tea.Model, tea.Cmd) {
+	mod, ok := m.moduleForID(r.PackageID)
+	if !ok {
+		return m, nil
+	}
+	m.detailsRow = &r
+	m.actionSel = 0
+	m.mode = modeDetails
+	if m.prefs != nil {
+		_ = m.prefs.MarkVisited(m.prefsState, r)
+	}
+
+	key := moduleDetailKey(r.PackageID, r.Key)
+	_, haveLazy := m.lazyDetails[key]
+	if haveLazy && !mod.AlwaysRefresh() {
+		return m, nil
+	}
+	if mod.AlwaysRefresh() {
+		delete(m.lazyDetails, key)
+	}
+	ctx := m.moduleContextFor(r.PackageID)
+	eff := mod.ResolveDetails(ctx, r)
+	nm, cmd := ApplyEffect(m, eff)
+	return nm, cmd
+}
+
+// dispatchModuleScope invokes the module's HandleSearch, updates
+// moduleState with the returned State, and reduces the returned
+// effects through ApplyEffect (accumulating their tea.Cmds).
+func (m Model) dispatchModuleScope(alias, rest string, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	mod, ok := m.moduleForAlias(alias)
+	if !ok {
+		return m, cmd
+	}
+	id := mod.Manifest().ID
+	ctxMod := m.moduleContextFor(id)
+	state := m.moduleState[id]
+	rows, newState, effects := mod.HandleSearch(ctxMod, rest, state)
+	m.moduleState[id] = newState
+	m.scopedResults = moduleRowsToResults(rows)
+	m.scopedQuery = rest
+	m.results = nil
+	m.clampSelected()
+
+	var cmds []tea.Cmd
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	for _, eff := range effects {
+		newM, c := ApplyEffect(m, eff)
+		m = newM
+		if c != nil {
+			cmds = append(cmds, c)
+		}
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// moduleRowsToResults wraps a slice of module Rows in search.Result
+// records.
+func moduleRowsToResults(rows []core.Row) []search.Result {
+	out := make([]search.Result, 0, len(rows))
+	for i := range rows {
+		out = append(out, search.Result{Row: rows[i]})
+	}
+	return out
+}
+
+// computeModuleResults fuzz-matches the query against every row
+// cached by the modules. Returns nil when no module cache is open or
+// when the query is empty.
+func (m Model) computeModuleResults(query string) []search.Result {
+	if m.moduleCache == nil || query == "" {
 		return nil
 	}
-	return search.Fuzzy(query, mem.All(), MaxDisplayedResults)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	rows, err := m.moduleCache.AllRows(ctx)
+	if err != nil {
+		return nil
+	}
+	return search.Fuzzy(query, rows, MaxDisplayedResults)
+}
+
+// toggleFavoriteForRow flips favorite state on the given module row,
+// persists the change, and returns the matching toast. Returns true
+// when the row was favorited, false when unfavorited.
+func (m *Model) toggleFavoriteForRow(r core.Row) (favorited bool, toast Toast) {
+	if m.prefs == nil || m.prefsState == nil {
+		return false, newErrorToast("favorites unavailable")
+	}
+	if m.prefsState.IsFavorite(r.PackageID, r.Key) {
+		if err := m.prefs.UnsetFavorite(m.prefsState, r.PackageID, r.Key); err != nil {
+			return false, newErrorToast("unfavorite failed: " + err.Error())
+		}
+		return false, newSuccessToast("unfavorited " + r.Name)
+	}
+	if err := m.prefs.SetFavorite(m.prefsState, r); err != nil {
+		return false, newErrorToast("favorite failed: " + err.Error())
+	}
+	return true, newSuccessToast("★ favorited " + r.Name)
 }

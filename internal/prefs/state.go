@@ -3,8 +3,6 @@ package prefs
 import (
 	"sort"
 	"sync"
-
-	"github.com/wmattei/scout/internal/core"
 )
 
 // State is the TUI's read view of the prefs DB. It is populated by
@@ -17,7 +15,7 @@ import (
 // suspenders measure).
 type State struct {
 	mu        sync.RWMutex
-	favorites map[typeKey]FavoriteRow
+	favorites map[rowKey]FavoriteRow
 	recents   []RecentRow // sorted newest-first, capped at recentsCap
 }
 
@@ -25,18 +23,18 @@ const recentsCap = 10
 
 // newState returns an empty, zero-value State.
 func newState() *State {
-	return &State{favorites: make(map[typeKey]FavoriteRow)}
+	return &State{favorites: make(map[rowKey]FavoriteRow)}
 }
 
-// IsFavorite reports whether the (type, key) pair is in the favorites
-// set. Lock-free for callers; takes an RLock internally.
-func (s *State) IsFavorite(t core.ResourceType, key string) bool {
+// IsFavorite reports whether the (packageID, rowKey) pair is in the
+// favorites set. Lock-free for callers; takes an RLock internally.
+func (s *State) IsFavorite(packageID, rowK string) bool {
 	if s == nil {
 		return false
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, ok := s.favorites[typeKey{Type: t, Key: key}]
+	_, ok := s.favorites[rowKey{PackageID: packageID, RowKey: rowK}]
 	return ok
 }
 
@@ -55,7 +53,10 @@ func (s *State) Favorites() []FavoriteRow {
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].Key < out[j].Key
+			if out[i].PackageID != out[j].PackageID {
+				return out[i].PackageID < out[j].PackageID
+			}
+			return out[i].RowKey < out[j].RowKey
 		}
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
@@ -79,14 +80,14 @@ func (s *State) Recents() []RecentRow {
 func (s *State) setFavorite(row FavoriteRow) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.favorites[typeKey{Type: row.Type, Key: row.Key}] = row
+	s.favorites[rowKey{PackageID: row.PackageID, RowKey: row.RowKey}] = row
 }
 
 // unsetFavorite removes the entry under the write lock.
-func (s *State) unsetFavorite(t core.ResourceType, key string) {
+func (s *State) unsetFavorite(packageID, rowK string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.favorites, typeKey{Type: t, Key: key})
+	delete(s.favorites, rowKey{PackageID: packageID, RowKey: rowK})
 }
 
 // markVisited moves the given row to position 0 of the recents slice
@@ -94,11 +95,11 @@ func (s *State) unsetFavorite(t core.ResourceType, key string) {
 func (s *State) markVisited(row RecentRow) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Remove any existing entry for the same (type, key).
-	key := typeKey{Type: row.Type, Key: row.Key}
+	// Remove any existing entry for the same (packageID, rowKey).
+	key := rowKey{PackageID: row.PackageID, RowKey: row.RowKey}
 	next := s.recents[:0]
 	for _, r := range s.recents {
-		if (typeKey{Type: r.Type, Key: r.Key}) == key {
+		if (rowKey{PackageID: r.PackageID, RowKey: r.RowKey}) == key {
 			continue
 		}
 		next = append(next, r)

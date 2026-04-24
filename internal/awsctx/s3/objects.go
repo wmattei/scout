@@ -54,7 +54,6 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 		}
 		full := *p.Prefix
 		out = append(out, core.Resource{
-			Type:        core.RTypeFolder,
 			Key:         full,
 			DisplayName: lastSegmentWithSlash(full),
 			Meta: map[string]string{
@@ -80,7 +79,6 @@ func ListAtPrefix(ctx context.Context, ac *awsctx.Context, bucket, prefix string
 			meta[MetaMtime] = fmt.Sprintf("%d", o.LastModified.Unix())
 		}
 		out = append(out, core.Resource{
-			Type:        core.RTypeObject,
 			Key:         full,
 			DisplayName: lastSegment(full),
 			Meta:        meta,

@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
-	"github.com/wmattei/scout/internal/services"
 )
 
 // updateTail handles key events while in modeTailLogs. Esc stops the
@@ -70,16 +69,6 @@ func (m Model) updateTail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeDetails
 		m.toast = newToast("stopped tailing", 2*time.Second)
-		// Re-fire a fresh resolve so the details panel shows current
-		// data after returning from the tail view.
-		if p, ok := services.Get(m.detailsResource.Type); ok {
-			key := lazyDetailKey{Type: m.detailsResource.Type, Key: m.detailsResource.Key}
-			if p.AlwaysRefresh() {
-				delete(m.lazyDetails, key)
-				m.lazyDetailsState[key] = lazyStateInFlight
-			}
-			return m, resolveLazyDetailsCmd(m.awsCtx, p, m.detailsResource)
-		}
 		return m, nil
 	case "ctrl+down":
 		m.tailViewport.GotoBottom()

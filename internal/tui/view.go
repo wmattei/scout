@@ -67,9 +67,6 @@ func (m Model) View() string {
 		body = renderTailLogs(m, bodyHeight)
 	case modeSwitcher:
 		body = renderSwitcher(m.switcher, m.width, bodyHeight)
-	case modeExecutionDetails:
-		body = renderExecutionDetails(m, m.width, bodyHeight)
-		body = padBlock(body, bodyHeight)
 	case modeOnboarding:
 		body = renderOnboarding(m, m.width, bodyHeight)
 	default:
@@ -111,16 +108,14 @@ func (m Model) renderSearchBody(height int) string {
 
 	emptyMsg := "no results"
 	switch {
-	case inputValue == "" && m.memory.Len() == 0:
-		emptyMsg = "empty cache — run `scout preload all` or type a service scope (s3:, ecs:, td:)"
 	case inputValue == "":
-		emptyMsg = "start typing to search cached resources"
+		emptyMsg = "start typing to search cached resources, or type a service scope (s3:, ecs:, td:)"
 	case m.isLoadingScoped() && len(visible) == 0:
 		emptyMsg = fmt.Sprintf("%s  loading %s", spinnerFrame(m.spinTick), inputValue)
 	case len(visible) == 0:
 		emptyMsg = fmt.Sprintf("no matches for %q", inputValue)
 	}
-	return renderResults(visible, m.selected, m.width, height, emptyMsg, m.prefsState)
+	return renderResults(visible, m.selected, m.width, height, emptyMsg, m.prefsState, m.registry)
 }
 
 // padBlock appends blank lines to `body` until it has exactly `height`

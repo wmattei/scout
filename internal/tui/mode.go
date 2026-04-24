@@ -21,12 +21,6 @@ const (
 	// routed to updateSwitcher; Esc restores the previous mode.
 	modeSwitcher
 
-	// modeExecutionDetails shows one SSM Automation execution —
-	// header + inputs + per-step tiles with Lambda step logs inline.
-	// Polls while the execution is non-terminal. Entered from
-	// modeDetails by activating a selectable event row on a runbook.
-	modeExecutionDetails
-
 	// modeOnboarding is the fallback screen shown when scout starts
 	// without a resolvable AWS context. If the user has profiles
 	// configured we invite them to press Ctrl+P and pick one; if not,
@@ -46,8 +40,6 @@ func (m Mode) String() string {
 		return "tail-logs"
 	case modeSwitcher:
 		return "switcher"
-	case modeExecutionDetails:
-		return "execution-details"
 	case modeOnboarding:
 		return "onboarding"
 	default:

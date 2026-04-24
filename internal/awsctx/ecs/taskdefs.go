@@ -61,7 +61,6 @@ func ListTaskDefFamilies(ctx context.Context, ac *awsctx.Context, opts awsctx.Li
 	resources := make([]core.Resource, 0, len(families))
 	for _, fam := range families {
 		resources = append(resources, core.Resource{
-			Type:        core.RTypeEcsTaskDefFamily,
 			Key:         fam,
 			DisplayName: fam,
 			Meta:        map[string]string{}, // revision + containers resolved lazily

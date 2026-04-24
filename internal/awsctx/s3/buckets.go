@@ -1,5 +1,7 @@
 // Package s3 contains scout's thin wrappers around the AWS S3 SDK.
-// Each function returns []core.Resource ready to hand to the index layer.
+// Each function returns []core.Resource — the S3 module maps those
+// records into core.Row records before handing them to the shared
+// cache.
 package s3
 
 import (
@@ -66,7 +68,6 @@ func ListBuckets(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOption
 				meta[MetaCreatedAt] = fmt.Sprintf("%d", b.CreationDate.Unix())
 			}
 			resources = append(resources, core.Resource{
-				Type:        core.RTypeBucket,
 				Key:         *b.Name,
 				DisplayName: *b.Name,
 				Meta:        meta,

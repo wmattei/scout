@@ -4,26 +4,26 @@ import (
 	"strings"
 
 	"github.com/wmattei/scout/internal/core"
+	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 )
 
 // homeSections represents the data source for the empty-input home
 // page: favorites first, then recents. The TUI builds a flat slice of
-// search.Result (each wrapping a core.Resource with no fuzzy
-// highlights) plus two index offsets that tell the renderer where the
-// Recents section begins.
+// search.Result (each wrapping a module row with no fuzzy highlights)
+// plus two index offsets that tell the renderer where the Recents
+// section begins.
 type homeSections struct {
-	rows          []search.Result // favorites followed by recents
-	favoritesLen  int             // number of rows belonging to Favorites
-	recentsLen    int             // number of rows belonging to Recents
+	rows         []search.Result // favorites followed by recents
+	favoritesLen int             // number of rows belonging to Favorites
+	recentsLen   int             // number of rows belonging to Recents
 }
 
 // buildHomeSections assembles the flat row list from the current
-// prefs state. Uses the in-memory resource index to fetch up-to-date
-// resource records where possible; falls back to a snapshotted name
-// when the resource isn't in the cache (pre-preload, or post-
-// deletion).
+// prefs state. Favorites and recents carry PackageID/RowKey/Display
+// snapshots the TUI renders directly without consulting the module
+// cache.
 func buildHomeSections(m Model) homeSections {
 	if m.prefsState == nil {
 		return homeSections{}
@@ -34,10 +34,18 @@ func buildHomeSections(m Model) homeSections {
 
 	rows := make([]search.Result, 0, len(favs)+len(recents))
 	for _, f := range favs {
-		rows = append(rows, search.Result{Resource: resolveResource(m, f.Type, f.Key, f.Name)})
+		rows = append(rows, search.Result{Row: core.Row{
+			PackageID: f.PackageID,
+			Key:       f.RowKey,
+			Name:      f.Display,
+		}})
 	}
 	for _, r := range recents {
-		rows = append(rows, search.Result{Resource: resolveResource(m, r.Type, r.Key, r.Name)})
+		rows = append(rows, search.Result{Row: core.Row{
+			PackageID: r.PackageID,
+			Key:       r.RowKey,
+			Name:      r.Display,
+		}})
 	}
 
 	return homeSections{
@@ -45,25 +53,6 @@ func buildHomeSections(m Model) homeSections {
 		favoritesLen: len(favs),
 		recentsLen:   len(recents),
 	}
-}
-
-// resolveResource looks up a live Resource record in the in-memory
-// cache. If the cache has a matching (type, key) entry, that full
-// Resource (with Meta for the meta column) is returned. Otherwise a
-// minimal stub is synthesized from the snapshotted name so the row
-// still renders.
-func resolveResource(m Model, t core.ResourceType, key, snapshotName string) core.Resource {
-	// memory.ByType is O(n) in the number of resources of that type,
-	// but n is bounded by cache size and this only runs on empty
-	// input, so it's fine.
-	if m.memory != nil {
-		for _, r := range m.memory.ByType(t) {
-			if r.Key == key {
-				return r
-			}
-		}
-	}
-	return core.Resource{Type: t, Key: key, DisplayName: snapshotName}
 }
 
 // renderHome renders the Favorites + Recents two-section view used
@@ -147,7 +136,7 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		if favSel < 0 || favSel >= favBudget {
 			favSel = -1
 		}
-		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState))
+		writeLine(renderResultsRange(favRows, favSel, 0, favBudget, width, m.prefsState, m.registry))
 		lines += favBudget - 1 // renderResultsRange emitted favBudget lines joined by \n; writeLine added 1 more
 	}
 
@@ -162,7 +151,7 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 		if recSel < 0 || recSel >= recBudget {
 			recSel = -1
 		}
-		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState))
+		writeLine(renderResultsRange(recRows, recSel, 0, recBudget, width, m.prefsState, m.registry))
 		lines += recBudget - 1
 	}
 
@@ -178,13 +167,13 @@ func renderHome(m Model, sections homeSections, width, height int) string {
 // row within the displayed window. This is a thin wrapper so the
 // home page and the regular search body both share the same per-row
 // formatting without renderResults' empty-state centering logic.
-func renderResultsRange(results []search.Result, selected, start, height, width int, favs *prefs.State) string {
+func renderResultsRange(results []search.Result, selected, start, height, width int, favs *prefs.State, registry *module.Registry) string {
 	// Delegate to renderResults with the same args. renderResults
 	// already handles windowing via its scroll-window calculation
 	// when selected >= height, so passing height equal to the budget
 	// and the full list works.
 	_ = start // renderResults computes its own start from `selected`
-	return strings.TrimRight(renderResults(results, selected, width, height, "", favs), "\n")
+	return strings.TrimRight(renderResults(results, selected, width, height, "", favs, registry), "\n")
 }
 
 // homeActive reports whether the TUI should render the home page

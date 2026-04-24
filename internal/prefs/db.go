@@ -10,27 +10,30 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// schemaVersion is bumped whenever the DDL changes. Like the resource
-// cache, prefs is recreated (drop+create) on mismatch because v1 has
+// schemaVersion is bumped whenever the DDL changes. Like the module
+// cache, prefs is recreated (drop+create) on mismatch because v0 has
 // no user data anywhere yet. Future bumps with real user data will
 // introduce a proper migration.
-const schemaVersion = 1
+//
+// v2 rekeys favorites + recents by (package_id, row_key) — the legacy
+// (type, key) pair tied to the retired core.ResourceType enum is gone.
+const schemaVersion = 2
 
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS favorites (
-  type        TEXT    NOT NULL,
-  key         TEXT    NOT NULL,
-  name        TEXT    NOT NULL,
+  package_id  TEXT    NOT NULL,
+  row_key     TEXT    NOT NULL,
+  display     TEXT    NOT NULL,
   created_at  INTEGER NOT NULL,
-  PRIMARY KEY (type, key)
+  PRIMARY KEY (package_id, row_key)
 );
 
 CREATE TABLE IF NOT EXISTS recents (
-  type        TEXT    NOT NULL,
-  key         TEXT    NOT NULL,
-  name        TEXT    NOT NULL,
+  package_id  TEXT    NOT NULL,
+  row_key     TEXT    NOT NULL,
+  display     TEXT    NOT NULL,
   visited_at  INTEGER NOT NULL,
-  PRIMARY KEY (type, key)
+  PRIMARY KEY (package_id, row_key)
 );
 CREATE INDEX IF NOT EXISTS recents_visited_at ON recents(visited_at DESC);
 
@@ -147,8 +150,8 @@ func writeSchemaVersion(db *sql.DB) error {
 	return nil
 }
 
-// cacheDir mirrors internal/index.cacheDir. Duplicated to keep the
-// prefs package dependency-free.
+// cacheDir mirrors internal/cache.DBPath's directory logic.
+// Duplicated to keep the prefs package dependency-free.
 func cacheDir() (string, error) {
 	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
 		return filepath.Join(xdg, "scout"), nil

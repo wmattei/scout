@@ -202,7 +202,8 @@ type TaskDefDetails struct {
 
 // DescribeFamily fetches the latest ACTIVE revision of a task definition
 // family and returns a TaskDefDetails. The `family` argument is the bare
-// family name (same as core.Resource.Key for RTypeEcsTaskDefFamily).
+// family name (same as core.Resource.Key returned by
+// ListTaskDefFamilies).
 func DescribeFamily(ctx context.Context, ac *awsctx.Context, family string) (*TaskDefDetails, error) {
 	client := awsecs.NewFromConfig(ac.Cfg)
 	out, err := client.DescribeTaskDefinition(ctx, &awsecs.DescribeTaskDefinitionInput{

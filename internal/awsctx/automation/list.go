@@ -89,7 +89,6 @@ func ListDocuments(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpti
 			}
 
 			resources = append(resources, core.Resource{
-				Type:        core.RTypeSSMAutomationDocument,
 				Key:         *d.Name,
 				DisplayName: *d.Name,
 				Meta:        meta,

@@ -4,29 +4,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/wmattei/scout/internal/search"
 )
 
 // Custom messages emitted by commands.
 type (
-	msgResourcesUpdated struct {
-		errors []string // one string per failed subtask, empty on full success
-	}
-	msgAccount     struct{ account string }
-	msgSpinTick    struct{}
-	msgPollDetails struct{ key lazyDetailKey }
-
-	// msgScopedResults carries the merged cache+live result set for a
-	// scoped (bucket/prefix) search. `query` is the exact input value
-	// that produced these results — the handler drops the message if
-	// the input has moved on since, so stale results can't clobber
-	// fresher ones. `err` is set when the live fetch failed.
-	msgScopedResults struct {
-		query   string
-		results []search.Result
-		err     string
-	}
+	msgAccount  struct{ account string }
+	msgSpinTick struct{}
 )
 
 // Update routes messages to per-mode key handlers and per-message
@@ -45,7 +28,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.tailViewport.Width = m.width
 		m.tailViewport.Height = vpHeight
-		resizeExecutionViewport(&m)
 		return m, nil
 
 	case tea.MouseMsg:
@@ -67,34 +49,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateTail(msg)
 		case modeSwitcher:
 			return m.updateSwitcher(msg)
-		case modeExecutionDetails:
-			return updateExecutionDetails(m, msg)
 		case modeOnboarding:
 			return m.updateOnboarding(msg)
 		default:
 			return m.updateSearch(msg)
 		}
 
-	case msgResourcesUpdated:
-		return m.handleResourcesUpdated(msg)
-	case msgScopedResults:
-		return m.handleScopedResults(msg)
-	case msgActionDone:
-		return m.handleActionDone(msg)
-	case msgEditorClosed:
-		return m.handleEditorClosed(msg)
-	case msgLazyDetailsResolved:
-		return m.handleLazyDetailsResolved(msg)
-	case msgAutomationStarted:
-		return m.handleAutomationStarted(msg)
-	case msgExecutionFetched:
-		return handleExecutionFetched(m, msg)
-	case msgExecutionStepLogs:
-		return handleExecutionStepLogs(m, msg)
-	case msgExecutionPollTick:
-		return handleExecutionPollTick(m, msg)
-	case msgPollDetails:
-		return m.handlePollDetails(msg)
 	case msgTailStarted:
 		return m.handleTailStarted(msg)
 	case msgTailEvent:
@@ -106,6 +66,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleSwitcherCommitted(msg)
 	case msgSpinTick:
 		return m.handleSpinTick()
+	case msgEffectDone:
+		return m.handleEffectDone(msg)
 	}
 
 	return m, nil

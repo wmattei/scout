@@ -105,7 +105,6 @@ func ListServices(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOptio
 					meta[MetaTaskDefFamily] = taskDefFamilyFromArn(*svc.TaskDefinition)
 				}
 				resources = append(resources, core.Resource{
-					Type:        core.RTypeEcsService,
 					Key:         *svc.ServiceArn,
 					DisplayName: *svc.ServiceName,
 					Meta:        meta,
