@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/wmattei/scout/internal/effect"
 	"github.com/wmattei/scout/internal/search"
 	"github.com/wmattei/scout/internal/services"
 )
@@ -292,6 +294,13 @@ func (m Model) handleSwitcherCommitted(msg msgSwitcherCommitted) (tea.Model, tea
 	m.lazyDetailsState = make(map[lazyDetailKey]lazyDetailState)
 	m.serviceScopeFetched = make(map[string]struct{})
 	m.account = ""
+	// Reset module-era state + reopen the shared cache for the new
+	// context. Clearing these before reopen means the very first
+	// HandleSearch under the new profile sees an empty state (fires
+	// the live Async) and an empty lazy (renders "resolving…").
+	m.moduleState = make(map[string]effect.State)
+	m.moduleLazy = make(map[lazyDetailKey]map[string]string)
+	m.reopenModuleCache(context.Background(), m.awsCtx.Profile, m.awsCtx.Region)
 	m.switcher.Hide()
 	m.mode = modeSearch
 	if msg.prefsErr != nil {
