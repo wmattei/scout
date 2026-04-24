@@ -45,10 +45,21 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
+		// Esc on a virtual-row Details page (Automation execution
+		// pop-up) pops back to the owning module Details view instead
+		// of returning to search.
+		if m.virtualRow != nil {
+			m.virtualRow = nil
+			m.actionSel = 0
+			m.detailsFocus = detailsFocusActions
+			m.eventSel = 0
+			return m, nil
+		}
 		m.mode = modeSearch
 		m.actionSel = 0
 		m.detailsFocus = detailsFocusActions
 		m.eventSel = 0
+		m.detailsRow = nil
 		return m, nil
 	case "tab":
 		// Tab cycles focus between Actions and Events, but only when
@@ -127,6 +138,16 @@ type moduleKeyResult struct {
 	cmd   tea.Cmd
 }
 
+// currentModuleEventActivations returns the activation IDs published
+// by the most recent renderModuleDetails call. Returns nil when the
+// published slice is missing or the Events zone has no rows.
+func (m Model) currentModuleEventActivations() []string {
+	if m.moduleEventActivations == nil {
+		return nil
+	}
+	return *m.moduleEventActivations
+}
+
 // handleModuleDetailsKey handles navigation + Enter for a module-owned
 // Details view. Returns handled=false for keys the legacy path still
 // owns (ctrl+p, ctrl+c, esc, number hotkeys), so the caller continues
@@ -139,16 +160,38 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 	actions := mod.Actions(*m.detailsRow)
 	switch msg.String() {
 	case "up":
+		if m.detailsFocus == detailsFocusEvents {
+			if m.eventSel > 0 {
+				m.eventSel--
+			}
+			return moduleKeyResult{m, nil}, true
+		}
 		if m.actionSel > 0 {
 			m.actionSel--
 		}
 		return moduleKeyResult{m, nil}, true
 	case "down":
+		if m.detailsFocus == detailsFocusEvents {
+			if m.eventSel < len(m.currentModuleEventActivations())-1 {
+				m.eventSel++
+			}
+			return moduleKeyResult{m, nil}, true
+		}
 		if m.actionSel < len(actions)-1 {
 			m.actionSel++
 		}
 		return moduleKeyResult{m, nil}, true
 	case "enter":
+		if m.detailsFocus == detailsFocusEvents {
+			ids := m.currentModuleEventActivations()
+			if m.eventSel >= 0 && m.eventSel < len(ids) && ids[m.eventSel] != "" {
+				ctx := m.moduleContextFor(m.detailsRow.PackageID)
+				eff := mod.HandleEvent(ctx, *m.detailsRow, ids[m.eventSel])
+				nm, cmd := ApplyEffect(m, eff)
+				return moduleKeyResult{nm, cmd}, true
+			}
+			return moduleKeyResult{m, nil}, true
+		}
 		if m.actionSel < 0 || m.actionSel >= len(actions) {
 			return moduleKeyResult{m, nil}, true
 		}
@@ -156,6 +199,20 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 		eff := actions[m.actionSel].Run(ctx, *m.detailsRow)
 		nm, cmd := ApplyEffect(m, eff)
 		return moduleKeyResult{nm, cmd}, true
+	case "tab":
+		ids := m.currentModuleEventActivations()
+		if len(ids) == 0 {
+			return moduleKeyResult{m, nil}, true
+		}
+		if m.detailsFocus == detailsFocusActions {
+			m.detailsFocus = detailsFocusEvents
+			if m.eventSel >= len(ids) {
+				m.eventSel = 0
+			}
+		} else {
+			m.detailsFocus = detailsFocusActions
+		}
+		return moduleKeyResult{m, nil}, true
 	case "f":
 		if m.prefs != nil {
 			res := resourceFromRow(*m.detailsRow)

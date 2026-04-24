@@ -200,6 +200,15 @@ type Model struct {
 	// for Details rendering (Automation execution detail view).
 	// Populated by the OpenVirtualDetails effect; cleared on Esc.
 	virtualRow *core.Row
+
+	// moduleEventActivations is the ordered list of ActivationIDs
+	// emitted by the most recent module BuildDetails EventList zone.
+	// renderModuleDetails writes into *moduleEventActivations; the
+	// updateDetails Enter handler reads the entry at m.eventSel when
+	// detailsFocus == detailsFocusEvents. Stored behind a pointer
+	// so View-time writes mutate the real slice (renderDetails runs
+	// against a value-copy of Model).
+	moduleEventActivations *[]string
 }
 
 // executionState bundles every field that is only meaningful while the
@@ -255,11 +264,12 @@ func NewModel(
 			StepLogs: map[string][]string{},
 		},
 		serviceScopeFetched: make(map[string]struct{}),
-		detailsHitMap:       new([]clickRegion),
-		moduleState:         make(map[string]effect.State),
-		moduleLazy:          make(map[lazyDetailKey]map[string]string),
-		registry:            registry,
-		moduleCache:         moduleCache,
+		detailsHitMap:          new([]clickRegion),
+		moduleState:            make(map[string]effect.State),
+		moduleLazy:             make(map[lazyDetailKey]map[string]string),
+		registry:               registry,
+		moduleCache:            moduleCache,
+		moduleEventActivations: new([]string),
 	}
 }
 

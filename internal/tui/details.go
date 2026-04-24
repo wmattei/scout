@@ -37,6 +37,9 @@ import (
 // Top zones share a uniform height (max natural); bottom zones share
 // a uniform height that stretches to fill the remaining body budget.
 func renderDetails(m Model, width, height int) string {
+	if m.virtualRow != nil {
+		return m.renderModuleDetails(*m.virtualRow, width, height)
+	}
 	if m.detailsRow != nil {
 		return m.renderModuleDetails(*m.detailsRow, width, height)
 	}

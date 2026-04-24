@@ -37,6 +37,20 @@ func (m Model) renderModuleDetails(r core.Row, width, height int) string {
 	ctx := m.moduleContextFor(r.PackageID)
 	zones := mod.BuildDetails(ctx, r, lazy)
 
+	// Publish EventList activation IDs for the update loop to look
+	// up when Enter is pressed in events-focus. Clear first so a
+	// zone without events doesn't retain stale IDs from a prior row.
+	if m.moduleEventActivations != nil {
+		*m.moduleEventActivations = nil
+		if el, ok := zones.Events.(widget.EventList); ok {
+			ids := make([]string, 0, len(el.Rows))
+			for _, row := range el.Rows {
+				ids = append(ids, row.ActivationID)
+			}
+			*m.moduleEventActivations = ids
+		}
+	}
+
 	identity := m.renderModuleIdentityZone(mod, r, width/3, height/2)
 	status := renderModuleZone("Status", zones.Status, width/3, height/2)
 	metadata := renderModuleZone("Metadata", zones.Metadata, width/3, height/2)
