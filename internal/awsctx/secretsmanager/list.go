@@ -88,7 +88,6 @@ func ListSecrets(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOption
 			}
 
 			resources = append(resources, core.Resource{
-				Type:        core.RTypeSecretsManagerSecret,
 				Key:         *s.Name,
 				DisplayName: *s.Name,
 				Meta:        meta,

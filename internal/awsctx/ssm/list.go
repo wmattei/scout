@@ -78,7 +78,6 @@ func ListParameters(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpt
 			meta[MetaVersion] = fmt.Sprintf("%d", p.Version)
 
 			resources = append(resources, core.Resource{
-				Type:        core.RTypeSSMParameter,
 				Key:         *p.Name,
 				DisplayName: *p.Name,
 				Meta:        meta,

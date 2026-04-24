@@ -10,7 +10,6 @@ import (
 	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
-	"github.com/wmattei/scout/internal/services"
 )
 
 // renderResults returns a string containing every visible row, one per line.
@@ -60,25 +59,9 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 			indi = styleSelIndi.Render("▸ ")
 		}
 
-		// 2-4. Tag / meta / display name — module rows go through the
-		// module registry; legacy rows go through the services
-		// provider registry.
-		var (
-			tag        string
-			meta       string
-			displayRaw string
-		)
-		if r.ModuleRow != nil {
-			tag, meta, displayRaw = moduleRowDisplay(r.ModuleRow, registry)
-		} else {
-			if p, ok := services.Get(r.Resource.Type); ok {
-				tag = p.TagStyle().Render(padTag(p.TagLabel()))
-			} else {
-				tag = padTag("???")
-			}
-			meta = renderMeta(r.Resource)
-			displayRaw = r.Resource.DisplayName
-		}
+		// 2-4. Tag / meta / display name — every row is a module row
+		// lookup by PackageID in the registry.
+		tag, meta, displayRaw := moduleRowDisplay(&r.Row, registry)
 
 		nameBudget := width - indiWidth - tagWidth - gap*2 - lipgloss.Width(meta)
 		if nameBudget < 4 {
@@ -87,12 +70,7 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 		starPrefix := ""
 		isFav := false
 		if favs != nil {
-			if r.ModuleRow != nil {
-				syn := resourceFromRow(*r.ModuleRow)
-				isFav = favs.IsFavorite(syn.Type, syn.Key)
-			} else {
-				isFav = favs.IsFavorite(r.Resource.Type, r.Resource.Key)
-			}
+			isFav = favs.IsFavorite(r.Row.PackageID, r.Row.Key)
 		}
 		if isFav {
 			starPrefix = "★ "
@@ -180,22 +158,6 @@ func moduleRowDisplay(r *core.Row, registry *module.Registry) (tag, meta, displa
 		}
 	}
 	return padTag(strings.ToUpper(r.PackageID)), "", displayName
-}
-
-// renderMeta returns the dim-styled meta column for a result row,
-// pulled from the per-type Provider. Providers return plain strings
-// — this function owns the styleRowDim wrapping so colors stay
-// centralized in the styles file.
-func renderMeta(r core.Resource) string {
-	p, ok := services.Get(r.Type)
-	if !ok {
-		return ""
-	}
-	plain := p.RenderMeta(r)
-	if plain == "" {
-		return ""
-	}
-	return styleRowDim.Render(plain)
 }
 
 // padRight pads s with spaces on the right so its visual width equals n.

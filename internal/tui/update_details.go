@@ -4,8 +4,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/wmattei/scout/internal/core"
 )
 
 // updateDetails handles key events while in modeDetails.
@@ -145,12 +143,12 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 		return moduleKeyResult{m, nil}, true
 	case "f":
 		if m.prefs != nil {
-			res := resourceFromRow(*m.detailsRow)
-			if m.prefsState != nil && m.prefsState.IsFavorite(res.Type, res.Key) {
-				_ = m.prefs.UnsetFavorite(m.prefsState, res.Type, res.Key)
+			r := *m.detailsRow
+			if m.prefsState != nil && m.prefsState.IsFavorite(r.PackageID, r.Key) {
+				_ = m.prefs.UnsetFavorite(m.prefsState, r.PackageID, r.Key)
 				m.toast = newToast("unfavorited", 2*time.Second)
 			} else {
-				_ = m.prefs.SetFavorite(m.prefsState, res)
+				_ = m.prefs.SetFavorite(m.prefsState, r)
 				m.toast = newToast("favorited", 2*time.Second)
 			}
 		}
@@ -171,23 +169,4 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 		}
 	}
 	return moduleKeyResult{m, nil}, false
-}
-
-// toggleFavoriteForResource flips favorite state on the given resource,
-// persists the change, and returns the matching toast. Returns true when
-// the resource was favorited, false when unfavorited.
-func (m *Model) toggleFavoriteForResource(r core.Resource) (favorited bool, toast Toast) {
-	if m.prefs == nil || m.prefsState == nil {
-		return false, newErrorToast("favorites unavailable")
-	}
-	if m.prefsState.IsFavorite(r.Type, r.Key) {
-		if err := m.prefs.UnsetFavorite(m.prefsState, r.Type, r.Key); err != nil {
-			return false, newErrorToast("unfavorite failed: " + err.Error())
-		}
-		return false, newSuccessToast("unfavorited " + r.DisplayName)
-	}
-	if err := m.prefs.SetFavorite(m.prefsState, r); err != nil {
-		return false, newErrorToast("favorite failed: " + err.Error())
-	}
-	return true, newSuccessToast("★ favorited " + r.DisplayName)
 }

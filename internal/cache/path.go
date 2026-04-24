@@ -9,9 +9,8 @@ import (
 )
 
 // DBPath returns the absolute path of the cache DB for the given
-// (profile, region). Mirrors the existing
-// internal/index/db.go::openSQLiteForContext resolver so the switcher
-// commit flow keeps working unchanged.
+// (profile, region). One file per context under $XDG_CACHE_HOME/scout
+// (fallback ~/.cache/scout).
 func DBPath(profile, region string) (string, error) {
 	dir, err := baseDir()
 	if err != nil {

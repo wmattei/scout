@@ -12,7 +12,7 @@ import (
 // newest-first and capped at recentsCap.
 func (d *DB) loadRecents(ctx context.Context, s *State) error {
 	rows, err := d.sql.QueryContext(ctx, `
-		SELECT type, key, name, visited_at
+		SELECT package_id, row_key, display, visited_at
 		FROM recents
 		ORDER BY visited_at DESC
 		LIMIT ?`,
@@ -25,15 +25,15 @@ func (d *DB) loadRecents(ctx context.Context, s *State) error {
 
 	var loaded []RecentRow
 	for rows.Next() {
-		var typeStr, key, name string
+		var packageID, rKey, display string
 		var visitedAt int64
-		if err := rows.Scan(&typeStr, &key, &name, &visitedAt); err != nil {
+		if err := rows.Scan(&packageID, &rKey, &display, &visitedAt); err != nil {
 			return fmt.Errorf("scanning recent row: %w", err)
 		}
 		loaded = append(loaded, RecentRow{
-			Type:      parseType(typeStr),
-			Key:       key,
-			Name:      name,
+			PackageID: packageID,
+			RowKey:    rKey,
+			Display:   display,
 			VisitedAt: time.Unix(visitedAt, 0),
 		})
 	}
@@ -47,11 +47,11 @@ func (d *DB) loadRecents(ctx context.Context, s *State) error {
 	return nil
 }
 
-// MarkVisited upserts the resource into the recents table with
+// MarkVisited upserts the row into the recents table with
 // visited_at=now, then deletes any rows outside the top recentsCap so
 // the table never grows beyond the visible cap. Updates the in-memory
 // State on success.
-func (d *DB) MarkVisited(s *State, r core.Resource) error {
+func (d *DB) MarkVisited(s *State, r core.Row) error {
 	now := time.Now()
 
 	tx, err := d.sql.BeginTx(context.Background(), nil)
@@ -61,12 +61,12 @@ func (d *DB) MarkVisited(s *State, r core.Resource) error {
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(context.Background(), `
-		INSERT INTO recents (type, key, name, visited_at)
+		INSERT INTO recents (package_id, row_key, display, visited_at)
 		VALUES (?, ?, ?, ?)
-		ON CONFLICT(type, key) DO UPDATE SET
-			name = excluded.name,
+		ON CONFLICT(package_id, row_key) DO UPDATE SET
+			display = excluded.display,
 			visited_at = excluded.visited_at
-	`, r.Type.String(), r.Key, r.DisplayName, now.Unix()); err != nil {
+	`, r.PackageID, r.Key, r.Name, now.Unix()); err != nil {
 		return fmt.Errorf("upsert recent: %w", err)
 	}
 
@@ -85,9 +85,9 @@ func (d *DB) MarkVisited(s *State, r core.Resource) error {
 	}
 
 	s.markVisited(RecentRow{
-		Type:      r.Type,
-		Key:       r.Key,
-		Name:      r.DisplayName,
+		PackageID: r.PackageID,
+		RowKey:    r.Key,
+		Display:   r.Name,
 		VisitedAt: now,
 	})
 	return nil

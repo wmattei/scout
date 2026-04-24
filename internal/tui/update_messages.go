@@ -74,16 +74,11 @@ func (m Model) handleSwitcherCommitted(msg msgSwitcherCommitted) (tea.Model, tea
 		m.toast = newErrorToast("switch failed: " + msg.err.Error())
 		return m, nil
 	}
-	// Close the old DB handles — we're done with them.
-	if m.db != nil {
-		_ = m.db.Close()
-	}
+	// Close the old prefs handle — we're done with it.
 	if m.prefs != nil {
 		_ = m.prefs.Close()
 	}
 	m.awsCtx = msg.ctx
-	m.db = msg.db
-	m.memory = msg.memory
 	m.prefs = msg.prefs
 	m.prefsState = msg.prefsState
 	// The new context needs its own activity middleware.
@@ -94,16 +89,13 @@ func (m Model) handleSwitcherCommitted(msg msgSwitcherCommitted) (tea.Model, tea
 	m.scopedResults = nil
 	m.scopedQuery = ""
 	m.selected = 0
-	m.lazyDetails = make(map[lazyDetailKey]map[string]string)
-	m.lazyDetailsState = make(map[lazyDetailKey]lazyDetailState)
-	m.serviceScopeFetched = make(map[string]struct{})
 	m.account = ""
 	// Reset module-era state + reopen the shared cache for the new
 	// context. Clearing these before reopen means the very first
 	// HandleSearch under the new profile sees an empty state (fires
 	// the live Async) and an empty lazy (renders "resolving…").
 	m.moduleState = make(map[string]effect.State)
-	m.moduleLazy = make(map[lazyDetailKey]map[string]string)
+	m.lazyDetails = make(map[lazyDetailKey]map[string]string)
 	m.reopenModuleCache(context.Background(), m.awsCtx.Profile, m.awsCtx.Region)
 	m.switcher.Hide()
 	m.mode = modeSearch

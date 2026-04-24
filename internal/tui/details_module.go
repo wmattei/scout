@@ -33,7 +33,7 @@ func (m Model) renderModuleDetails(r core.Row, width, height int) string {
 	}
 
 	key := moduleDetailKey(r.PackageID, r.Key)
-	lazy := m.moduleLazy[key]
+	lazy := m.lazyDetails[key]
 	ctx := m.moduleContextFor(r.PackageID)
 	zones := mod.BuildDetails(ctx, r, lazy)
 

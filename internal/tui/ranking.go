@@ -22,7 +22,7 @@ func partitionByFavorites(results []search.Result, state *prefs.State) []search.
 	// Fast path: count favorites. If there are none, return as-is.
 	favCount := 0
 	for _, r := range results {
-		if state.IsFavorite(r.Resource.Type, r.Resource.Key) {
+		if state.IsFavorite(r.Row.PackageID, r.Row.Key) {
 			favCount++
 		}
 	}
@@ -33,7 +33,7 @@ func partitionByFavorites(results []search.Result, state *prefs.State) []search.
 	favs := make([]search.Result, 0, favCount)
 	rest := make([]search.Result, 0, len(results)-favCount)
 	for _, r := range results {
-		if state.IsFavorite(r.Resource.Type, r.Resource.Key) {
+		if state.IsFavorite(r.Row.PackageID, r.Row.Key) {
 			favs = append(favs, r)
 		} else {
 			rest = append(rest, r)

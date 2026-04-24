@@ -2,9 +2,8 @@
 //
 // Argv forms:
 //
-//	scout                            — launch the TUI
-//	scout preload [flags] <service>  — populate cache from AWS
-//	scout cache clear                — wipe the on-disk cache
+//	scout              — launch the TUI
+//	scout cache clear  — wipe the on-disk cache
 //
 // Environment flags:
 //

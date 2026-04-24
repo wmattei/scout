@@ -33,10 +33,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		picked := visible[m.selected]
-		if picked.ModuleRow != nil {
-			return m.enterModuleDetails(*picked.ModuleRow)
-		}
-		return m, nil
+		return m.enterModuleDetails(picked.Row)
 	case "tab":
 		return m.handleTab()
 	case "ctrl+p":
@@ -61,13 +58,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		picked := visible[m.selected]
-		var target core.Resource
-		if picked.ModuleRow != nil {
-			target = resourceFromRow(*picked.ModuleRow)
-		} else {
-			target = picked.Resource
-		}
-		_, toast := m.toggleFavoriteForResource(target)
+		_, toast := m.toggleFavoriteForRow(picked.Row)
 		m.toast = toast
 		return m, nil
 	}
@@ -78,23 +69,15 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.recomputeResults(cmd)
 }
 
-// handleTab implements Tab drill-in. When a bucket or folder row is
-// selected, Tab replaces the input value with that row's full path and
-// appends a trailing `/` so the scope advances on the next recompute.
-// For leaf rows Tab replaces with the row's name without a trailing
-// separator.
+// handleTab implements Tab drill-in. Replaces the input value with the
+// selected row's name so the scope advances on the next recompute.
 func (m Model) handleTab() (tea.Model, tea.Cmd) {
 	visible := m.visibleSearchResults()
 	if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 		return m, nil
 	}
 	row := visible[m.selected]
-	if row.ModuleRow != nil {
-		m.input.SetValue(row.ModuleRow.Name)
-		m.input.CursorEnd()
-		return m.recomputeResults(nil)
-	}
-	m.input.SetValue(row.Resource.DisplayName)
+	m.input.SetValue(row.Row.Name)
 	m.input.CursorEnd()
 	return m.recomputeResults(nil)
 }
@@ -110,7 +93,7 @@ func (m Model) recomputeResults(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		return m.dispatchModuleScope(alias, rest, cmd)
 	}
 
-	// Top-level fuzzy search: blend module cache rows.
+	// Top-level fuzzy search over cached module rows.
 	modRows := m.computeModuleResults(m.input.Value())
 	m.results = partitionByFavorites(modRows, m.prefsState)
 	m.scopedResults = nil
@@ -138,12 +121,16 @@ func deleteLastPathSegment(input string) string {
 	return ""
 }
 
-// isLoadingScoped reports whether an S3 drill-in search is in flight.
-// Service-scope mode is explicitly excluded — its loading affordance
-// is the status-bar spinner.
+// isLoadingScoped reports whether a module-scoped search is in flight —
+// i.e. the scoped query hasn't caught up with the current input yet.
+// Service-scope mode's loading affordance is the status-bar spinner;
+// this is only consulted while a module owns the current alias.
 func (m Model) isLoadingScoped() bool {
-	scope := search.ParseScope(m.input.Value())
-	return scope.Bucket != "" && m.scopedQuery != m.input.Value()
+	_, _, ok := m.scopeFromInput(m.input.Value())
+	if !ok {
+		return false
+	}
+	return m.scopedQuery != m.input.Value()
 }
 
 // visibleSearchResults returns whichever result list is currently active
@@ -179,7 +166,7 @@ func (m *Model) clampSelected() {
 }
 
 // enterModuleDetails transitions into modeDetails for a module-owned
-// row. Fires module.ResolveDetails as an Effect unless moduleLazy
+// row. Fires module.ResolveDetails as an Effect unless lazyDetails
 // already has an entry and the module doesn't declare AlwaysRefresh.
 func (m Model) enterModuleDetails(r core.Row) (tea.Model, tea.Cmd) {
 	mod, ok := m.moduleForID(r.PackageID)
@@ -187,20 +174,19 @@ func (m Model) enterModuleDetails(r core.Row) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.detailsRow = &r
-	m.detailsResource = core.Resource{}
 	m.actionSel = 0
 	m.mode = modeDetails
 	if m.prefs != nil {
-		_ = m.prefs.MarkVisited(m.prefsState, resourceFromRow(r))
+		_ = m.prefs.MarkVisited(m.prefsState, r)
 	}
 
 	key := moduleDetailKey(r.PackageID, r.Key)
-	_, haveLazy := m.moduleLazy[key]
+	_, haveLazy := m.lazyDetails[key]
 	if haveLazy && !mod.AlwaysRefresh() {
 		return m, nil
 	}
 	if mod.AlwaysRefresh() {
-		delete(m.moduleLazy, key)
+		delete(m.lazyDetails, key)
 	}
 	ctx := m.moduleContextFor(r.PackageID)
 	eff := mod.ResolveDetails(ctx, r)
@@ -244,12 +230,11 @@ func (m Model) dispatchModuleScope(alias, rest string, cmd tea.Cmd) (tea.Model, 
 }
 
 // moduleRowsToResults wraps a slice of module Rows in search.Result
-// records (ModuleRow populated, Resource zero).
+// records.
 func moduleRowsToResults(rows []core.Row) []search.Result {
 	out := make([]search.Result, 0, len(rows))
 	for i := range rows {
-		r := rows[i]
-		out = append(out, search.Result{ModuleRow: &r})
+		out = append(out, search.Result{Row: rows[i]})
 	}
 	return out
 }
@@ -267,5 +252,24 @@ func (m Model) computeModuleResults(query string) []search.Result {
 	if err != nil {
 		return nil
 	}
-	return search.FuzzyOverRows(query, rows, MaxDisplayedResults)
+	return search.Fuzzy(query, rows, MaxDisplayedResults)
+}
+
+// toggleFavoriteForRow flips favorite state on the given module row,
+// persists the change, and returns the matching toast. Returns true
+// when the row was favorited, false when unfavorited.
+func (m *Model) toggleFavoriteForRow(r core.Row) (favorited bool, toast Toast) {
+	if m.prefs == nil || m.prefsState == nil {
+		return false, newErrorToast("favorites unavailable")
+	}
+	if m.prefsState.IsFavorite(r.PackageID, r.Key) {
+		if err := m.prefs.UnsetFavorite(m.prefsState, r.PackageID, r.Key); err != nil {
+			return false, newErrorToast("unfavorite failed: " + err.Error())
+		}
+		return false, newSuccessToast("unfavorited " + r.Name)
+	}
+	if err := m.prefs.SetFavorite(m.prefsState, r); err != nil {
+		return false, newErrorToast("favorite failed: " + err.Error())
+	}
+	return true, newSuccessToast("★ favorited " + r.Name)
 }

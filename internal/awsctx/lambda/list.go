@@ -78,7 +78,6 @@ func ListFunctions(ctx context.Context, ac *awsctx.Context, opts awsctx.ListOpti
 			}
 
 			resources = append(resources, core.Resource{
-				Type:        core.RTypeLambdaFunction,
 				Key:         *fn.FunctionArn,
 				DisplayName: *fn.FunctionName,
 				Meta:        meta,

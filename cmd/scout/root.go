@@ -13,7 +13,6 @@ import (
 	"github.com/wmattei/scout/internal/awsctx"
 	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/debuglog"
-	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/modules"
 	"github.com/wmattei/scout/internal/prefs"
@@ -36,14 +35,14 @@ func rootCmd() *cobra.Command {
 			return runTUI()
 		},
 	}
-	root.AddCommand(preloadCmd(), cacheCmd())
+	root.AddCommand(cacheCmd())
 	return root
 }
 
 const rootLongHelp = `scout is an interactive terminal UI for navigating AWS infrastructure.
 
-Running scout with no arguments launches the TUI. Subcommands let you
-populate the local cache or wipe it.
+Running scout with no arguments launches the TUI. Use ` + "`scout cache clear`" + `
+to wipe the local cache.
 
 Service scopes (type in TUI):
   s3:, buckets:                         S3 buckets
@@ -89,15 +88,8 @@ func runTUI() (err error) {
 
 	ctx := context.Background()
 
-	// Tell the index layer which types are top-level so it can build the
-	// unified search snapshot. Runs regardless of AWS resolve outcome so
-	// the switcher commit flow can populate the memory index after the
-	// user picks a profile.
-	seedTopLevelTypes()
-
-	// Build the module registry. Empty during Phase 1 until modules
-	// migrate; cmd/scout/root.go switches over to reading from it in
-	// Phase 2.
+	// Build the module registry. Every user-visible flow runs through
+	// modules after the Cutover 14 legacy-deletion pass.
 	registry := module.NewRegistry()
 	modules.RegisterAll(registry)
 
@@ -105,26 +97,12 @@ func runTUI() (err error) {
 
 	awsCtx, resolveErr := awsctx.Resolve(ctx)
 	var (
-		db         *index.DB
-		memory     = index.NewMemory()
 		prefsDB    *prefs.DB
 		prefsState *prefs.State
 	)
 
 	if resolveErr == nil {
 		activity.Attach(&awsCtx.Cfg)
-
-		db, err = index.Open(awsCtx.Profile, awsCtx.Region)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		cached, err := db.LoadAll(ctx)
-		if err != nil {
-			return err
-		}
-		memory.Load(cached)
 
 		prefsDB, prefsState, err = prefs.Open(awsCtx.Profile, awsCtx.Region)
 		if err != nil {
@@ -136,9 +114,9 @@ func runTUI() (err error) {
 	} else {
 		// AWS context didn't resolve — we still launch the TUI so the
 		// user lands in an onboarding flow instead of seeing a raw
-		// stderr error. Downstream code paths guard on nil db / empty
-		// profile; the switcher's commit flow reopens everything once
-		// the user picks a profile + region.
+		// stderr error. Downstream code paths guard on empty profile;
+		// the switcher's commit flow reopens everything once the user
+		// picks a profile + region.
 		awsCtx = &awsctx.Context{}
 		debuglog.Logger().Warn("aws resolve failed", "err", resolveErr)
 	}
@@ -161,7 +139,7 @@ func runTUI() (err error) {
 		}
 	}
 
-	model := tui.NewModel(memory, db, awsCtx, activity, prefsDB, prefsState, registry, moduleCache)
+	model := tui.NewModel(awsCtx, activity, prefsDB, prefsState, registry, moduleCache)
 	if resolveErr != nil {
 		model = model.WithOnboarding(resolveErr.Error(), awsctx.ListProfiles())
 	}
@@ -170,6 +148,20 @@ func runTUI() (err error) {
 		return fmt.Errorf("tui: %w", runErr)
 	}
 	return nil
+}
+
+// cacheDir resolves the per-user scout cache directory, honouring XDG
+// first and falling back to ~/.cache/scout. Used by cacheCmd's clear
+// subcommand and by the crash-log writer.
+func cacheDir() (string, error) {
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return filepath.Join(xdg, "scout"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cache", "scout"), nil
 }
 
 // crashLogPath returns the absolute path to the crash log.

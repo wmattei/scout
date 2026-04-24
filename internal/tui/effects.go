@@ -116,14 +116,10 @@ func (h *modelHost) UpsertCacheRows(rows []effect.Row) {
 }
 
 func (h *modelHost) SetLazyDetails(packageID, key string, lazy map[string]string) {
-	if h.m.moduleLazy == nil {
-		h.m.moduleLazy = make(map[lazyDetailKey]map[string]string)
+	if h.m.lazyDetails == nil {
+		h.m.lazyDetails = make(map[lazyDetailKey]map[string]string)
 	}
-	// During migration we reuse lazyDetailKey; the Type field is
-	// overloaded to carry "0 = modules era". Phase 3 retires the old
-	// type entirely.
-	k := lazyDetailKey{Type: core.ResourceType(0), Key: packageID + ":" + key}
-	h.m.moduleLazy[k] = lazy
+	h.m.lazyDetails[moduleDetailKey(packageID, key)] = lazy
 }
 
 func (h *modelHost) OpenVirtualDetails(packageID, key, name string) {

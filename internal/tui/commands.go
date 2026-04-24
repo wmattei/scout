@@ -8,7 +8,6 @@ import (
 
 	"github.com/wmattei/scout/internal/awsctx"
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
-	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/prefs"
 )
 
@@ -84,17 +83,14 @@ func tailLogsNextCmd(stream *awslogs.TailStream) tea.Cmd {
 }
 
 // msgSwitcherCommitted carries the outcome of a profile/region swap.
-// On success, the new Context replaces m.awsCtx, the new DB handle
-// replaces m.db, and the in-memory index is swapped to the freshly
-// loaded cache. On failure, the old state is preserved and an error
-// toast is raised.
+// On success, the new Context replaces m.awsCtx and the new prefs DB
+// handle replaces m.prefs. On failure, the old state is preserved and
+// an error toast is raised.
 type msgSwitcherCommitted struct {
 	ctx        *awsctx.Context
-	db         *index.DB
-	memory     *index.Memory
 	prefs      *prefs.DB
 	prefsState *prefs.State
-	// err means the entire switch failed (e.g. cache DB open error).
+	// err means the entire switch failed (e.g. aws resolve error).
 	// prefsErr means only the prefs DB failed to open; the switch
 	// succeeded and the TUI will run with nil prefs this session.
 	err      error
@@ -102,11 +98,9 @@ type msgSwitcherCommitted struct {
 }
 
 // commitSwitcherCmd runs the heavy lifting of a profile/region swap
-// off the UI goroutine: load a new aws.Config via ResolveForProfile,
-// open the matching SQLite file, LoadAll() into a fresh Memory, and
-// return everything via msgSwitcherCommitted. The UI handler does
-// the final state assignment so the swap is atomic from the Update
-// loop's perspective.
+// off the UI goroutine: load a new aws.Config via ResolveForProfile
+// and open the matching prefs DB. The UI handler does the final state
+// assignment so the swap is atomic from the Update loop's perspective.
 func commitSwitcherCmd(profile, region string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -116,17 +110,6 @@ func commitSwitcherCmd(profile, region string) tea.Cmd {
 		if err != nil {
 			return msgSwitcherCommitted{err: err}
 		}
-		newDB, err := index.Open(newCtx.Profile, newCtx.Region)
-		if err != nil {
-			return msgSwitcherCommitted{err: err}
-		}
-		cached, err := newDB.LoadAll(ctx)
-		if err != nil {
-			_ = newDB.Close()
-			return msgSwitcherCommitted{err: err}
-		}
-		mem := index.NewMemory()
-		mem.Load(cached)
 
 		// prefs.Open failure is non-fatal: the context switch should
 		// still complete so the user reaches the new profile/region.
@@ -135,8 +118,6 @@ func commitSwitcherCmd(profile, region string) tea.Cmd {
 		newPrefs, newPrefsState, prefsErr := prefs.Open(newCtx.Profile, newCtx.Region)
 		return msgSwitcherCommitted{
 			ctx:        newCtx,
-			db:         newDB,
-			memory:     mem,
 			prefs:      newPrefs,
 			prefsState: newPrefsState,
 			prefsErr:   prefsErr,

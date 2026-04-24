@@ -11,20 +11,19 @@ import (
 
 // homeSections represents the data source for the empty-input home
 // page: favorites first, then recents. The TUI builds a flat slice of
-// search.Result (each wrapping a core.Resource with no fuzzy
-// highlights) plus two index offsets that tell the renderer where the
-// Recents section begins.
+// search.Result (each wrapping a module row with no fuzzy highlights)
+// plus two index offsets that tell the renderer where the Recents
+// section begins.
 type homeSections struct {
-	rows          []search.Result // favorites followed by recents
-	favoritesLen  int             // number of rows belonging to Favorites
-	recentsLen    int             // number of rows belonging to Recents
+	rows         []search.Result // favorites followed by recents
+	favoritesLen int             // number of rows belonging to Favorites
+	recentsLen   int             // number of rows belonging to Recents
 }
 
 // buildHomeSections assembles the flat row list from the current
-// prefs state. Uses the in-memory resource index to fetch up-to-date
-// resource records where possible; falls back to a snapshotted name
-// when the resource isn't in the cache (pre-preload, or post-
-// deletion).
+// prefs state. Favorites and recents carry PackageID/RowKey/Display
+// snapshots the TUI renders directly without consulting the module
+// cache.
 func buildHomeSections(m Model) homeSections {
 	if m.prefsState == nil {
 		return homeSections{}
@@ -35,10 +34,18 @@ func buildHomeSections(m Model) homeSections {
 
 	rows := make([]search.Result, 0, len(favs)+len(recents))
 	for _, f := range favs {
-		rows = append(rows, search.Result{Resource: resolveResource(m, f.Type, f.Key, f.Name)})
+		rows = append(rows, search.Result{Row: core.Row{
+			PackageID: f.PackageID,
+			Key:       f.RowKey,
+			Name:      f.Display,
+		}})
 	}
 	for _, r := range recents {
-		rows = append(rows, search.Result{Resource: resolveResource(m, r.Type, r.Key, r.Name)})
+		rows = append(rows, search.Result{Row: core.Row{
+			PackageID: r.PackageID,
+			Key:       r.RowKey,
+			Name:      r.Display,
+		}})
 	}
 
 	return homeSections{
@@ -46,25 +53,6 @@ func buildHomeSections(m Model) homeSections {
 		favoritesLen: len(favs),
 		recentsLen:   len(recents),
 	}
-}
-
-// resolveResource looks up a live Resource record in the in-memory
-// cache. If the cache has a matching (type, key) entry, that full
-// Resource (with Meta for the meta column) is returned. Otherwise a
-// minimal stub is synthesized from the snapshotted name so the row
-// still renders.
-func resolveResource(m Model, t core.ResourceType, key, snapshotName string) core.Resource {
-	// memory.ByType is O(n) in the number of resources of that type,
-	// but n is bounded by cache size and this only runs on empty
-	// input, so it's fine.
-	if m.memory != nil {
-		for _, r := range m.memory.ByType(t) {
-			if r.Key == key {
-				return r
-			}
-		}
-	}
-	return core.Resource{Type: t, Key: key, DisplayName: snapshotName}
 }
 
 // renderHome renders the Favorites + Recents two-section view used

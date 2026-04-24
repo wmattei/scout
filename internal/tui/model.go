@@ -10,38 +10,25 @@ import (
 	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/effect"
-	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/module"
 	"github.com/wmattei/scout/internal/prefs"
 	"github.com/wmattei/scout/internal/search"
 )
 
-// lazyDetailKey identifies a single resource or row in a lazy-detail
-// store. Historically keyed by (core.ResourceType, string) via the
-// services.Provider flow. During the module cutover, Type == 0 is a
-// sentinel meaning "module-owned key" and Key carries
-// "<packageID>:<rowKey>". Phase-3 retires the Type field.
+// lazyDetailKey identifies a single module row in the lazy-detail
+// store. Keyed by (PackageID, Key) so two modules can use the same
+// row Key without colliding.
 type lazyDetailKey struct {
-	Type core.ResourceType
-	Key  string
+	PackageID string
+	Key       string
 }
 
-// moduleDetailKey builds the lazyDetailKey used to index moduleLazy
+// moduleDetailKey builds the lazyDetailKey used to index lazyDetails
 // for a module-owned row. Mirrors the layout written by
 // modelHost.SetLazyDetails so both sides agree on the format.
 func moduleDetailKey(packageID, rowKey string) lazyDetailKey {
-	return lazyDetailKey{Key: packageID + ":" + rowKey}
+	return lazyDetailKey{PackageID: packageID, Key: rowKey}
 }
-
-// lazyDetailState tracks whether a given lazyDetailKey has had its
-// resolve fired, completed, or never been requested.
-type lazyDetailState int
-
-const (
-	lazyStateNone     lazyDetailState = iota // never requested
-	lazyStateInFlight                        // resolveDetails command running
-	lazyStateResolved                        // command landed, m.lazyDetails populated
-)
 
 // clickRegion is a rectangular hit-box in the rendered frame used by
 // the Details-mode mouse handler. X0/Y0 are inclusive, X1/Y1 are
@@ -58,8 +45,6 @@ type clickRegion struct {
 // modeDetails runs the Details panel + Actions list for a chosen row.
 type Model struct {
 	// Injected dependencies.
-	memory     *index.Memory
-	db         *index.DB
 	awsCtx     *awsctx.Context
 	activity   *awsctx.Activity
 	prefs      *prefs.DB
@@ -84,24 +69,21 @@ type Model struct {
 	scopedResults []search.Result
 	scopedQuery   string
 
-	// Details-mode state. During the cutover, exactly one of
-	// detailsResource (legacy) / detailsRow (module path) is set for
-	// the lifetime of modeDetails.
-	detailsResource core.Resource
-	detailsRow      *core.Row
-	actionSel       int
+	// Details-mode state. detailsRow is the module-owned row currently
+	// being inspected; virtualRow replaces it for synthetic drill-in
+	// views (e.g. Automation execution detail).
+	detailsRow *core.Row
+	actionSel  int
 	// detailsHitMap holds the clickable regions for the currently-
 	// rendered Details frame. It is a pointer so the View-time
 	// rendering (which sees a value-copy of Model) can populate it
 	// without returning a new Model. Update reads the slice on
 	// tea.MouseMsg to match a click against a cell.
 	detailsHitMap *[]clickRegion
-	// lazyDetails is the generic per-resource extra-data store
-	// populated by services.Provider.ResolveDetails. Keyed by
-	// (resource type, resource key) so different types can't
-	// collide on the same string key.
-	lazyDetails      map[lazyDetailKey]map[string]string
-	lazyDetailsState map[lazyDetailKey]lazyDetailState
+	// lazyDetails is the per-row extra-data store populated by
+	// module.ResolveDetails via SetLazyDetails. Keyed by (packageID,
+	// rowKey) so two modules can reuse the same row Key safely.
+	lazyDetails map[lazyDetailKey]map[string]string
 
 	// Tail-logs-mode state.
 	tailGroup    string              // log group name currently being tailed
@@ -128,15 +110,6 @@ type Model struct {
 	switcher Switcher
 	prevMode Mode
 
-	// serviceScopeFetched tracks which service-scope aliases have had
-	// their "first-entry" live fetch fire during this session. On the
-	// first keystroke that activates "<alias>:", recomputeResults
-	// dispatches refreshServiceCmd and adds the alias to this set;
-	// subsequent keystrokes under the same alias just re-filter the
-	// in-memory index. The set is cleared by the switcher commit
-	// handler when the AWS context swaps.
-	serviceScopeFetched map[string]struct{}
-
 	// Details keyboard focus. In modeDetails the focus toggles
 	// between the Actions zone (default) and the Events zone when
 	// it contains selectable rows (e.g. runbook execution history).
@@ -157,26 +130,20 @@ type Model struct {
 	// setup instructions.
 	onboardingProfiles []string
 
-	// --- modules refactor (Phase 1) ---
+	// --- modules runtime ---
 
 	// moduleState stores per-module opaque state, keyed by module
 	// manifest ID. Persists across keystrokes; wiped by the
 	// switcher commit flow.
 	moduleState map[string]effect.State
 
-	// moduleCache is the new shared-cache handle (internal/cache
-	// package). Runs alongside the legacy index/ handles during
-	// migration; Phase 3 consolidates.
+	// moduleCache is the shared cache handle all modules read and
+	// write through via effect.UpsertCacheRows / cache.Reader.
 	moduleCache *cache.DB
 
 	// registry is the module registry. Populated at startup; the
 	// effect reducer uses it to look up modules by ID.
 	registry *module.Registry
-
-	// moduleLazy replaces lazyDetails during Phase 2 migrations.
-	// Keyed by (packageID, key). Lazy maps landed via SetLazy
-	// effects from module.ResolveDetails.
-	moduleLazy map[lazyDetailKey]map[string]string
 
 	// pendingEditorEffectOnSave is the callback wired by an Editor
 	// effect. When the editor closes with saved content, this
@@ -205,7 +172,6 @@ const (
 
 // NewModel constructs the initial model for the bubbletea program.
 func NewModel(
-	memory *index.Memory, db *index.DB,
 	awsCtx *awsctx.Context, activity *awsctx.Activity,
 	prefsDB *prefs.DB, prefsState *prefs.State,
 	registry *module.Registry, moduleCache *cache.DB,
@@ -217,8 +183,6 @@ func NewModel(
 	ti.CharLimit = 512
 
 	return Model{
-		memory:                 memory,
-		db:                     db,
 		awsCtx:                 awsCtx,
 		activity:               activity,
 		prefs:                  prefsDB,
@@ -228,12 +192,9 @@ func NewModel(
 		height:                 24,
 		mode:                   modeSearch,
 		lazyDetails:            make(map[lazyDetailKey]map[string]string),
-		lazyDetailsState:       make(map[lazyDetailKey]lazyDetailState),
 		tailViewport:           viewport.New(80, 10),
-		serviceScopeFetched:    make(map[string]struct{}),
 		detailsHitMap:          new([]clickRegion),
 		moduleState:            make(map[string]effect.State),
-		moduleLazy:             make(map[lazyDetailKey]map[string]string),
 		registry:               registry,
 		moduleCache:            moduleCache,
 		moduleEventActivations: new([]string),
@@ -273,25 +234,11 @@ func (m Model) WithOnboarding(reason string, profiles []string) Model {
 	return m
 }
 
-// Init is called once when the program starts. The TUI no longer fires
-// a top-level refresh at launch — the cache is populated lazily by
-// service-scope first-entry fetches and explicitly by the
-// `scout preload <service>` subcommand. Init only kicks off the
-// spinner ticker and the one-shot caller-identity resolver here.
+// Init is called once when the program starts. Kicks off the spinner
+// ticker and the one-shot caller-identity resolver.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		spinTickCmd(),
 		resolveAccountCmd(m.awsCtx),
 	)
-}
-
-// lazyDetailsFor returns the resolved lazy detail map for the given
-// resource, or nil if nothing has been resolved (or resolution is
-// still in flight). Used by per-action providers via the action
-// dispatcher; see services.Provider.ConsoleURL / LogGroup signatures.
-func (m Model) lazyDetailsFor(r core.Resource) map[string]string {
-	if m.lazyDetails == nil {
-		return nil
-	}
-	return m.lazyDetails[lazyDetailKey{Type: r.Type, Key: r.Key}]
 }
