@@ -23,6 +23,15 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Module path intercepts navigation + Enter when m.detailsRow is
+	// the active selection. Events-zone activation + favorite toggle
+	// are wired in later Cutover tasks (11, 12).
+	if m.detailsRow != nil {
+		if out, handled := m.handleModuleDetailsKey(msg); handled {
+			return out.model, out.cmd
+		}
+	}
+
 	actions := ActionsFor(m.detailsResource.Type)
 	events := selectableEventRows(m)
 	hasSelectableEvents := len(events) > 0
@@ -109,6 +118,60 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// moduleKeyResult bundles the return pair from handleModuleDetailsKey
+// so the caller can branch on `handled` without nil-checking pointers.
+type moduleKeyResult struct {
+	model tea.Model
+	cmd   tea.Cmd
+}
+
+// handleModuleDetailsKey handles navigation + Enter for a module-owned
+// Details view. Returns handled=false for keys the legacy path still
+// owns (ctrl+p, ctrl+c, esc, number hotkeys), so the caller continues
+// its own switch.
+func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
+	mod, ok := m.moduleForID(m.detailsRow.PackageID)
+	if !ok {
+		return moduleKeyResult{m, nil}, false
+	}
+	actions := mod.Actions(*m.detailsRow)
+	switch msg.String() {
+	case "up":
+		if m.actionSel > 0 {
+			m.actionSel--
+		}
+		return moduleKeyResult{m, nil}, true
+	case "down":
+		if m.actionSel < len(actions)-1 {
+			m.actionSel++
+		}
+		return moduleKeyResult{m, nil}, true
+	case "enter":
+		if m.actionSel < 0 || m.actionSel >= len(actions) {
+			return moduleKeyResult{m, nil}, true
+		}
+		ctx := m.moduleContextFor(m.detailsRow.PackageID)
+		eff := actions[m.actionSel].Run(ctx, *m.detailsRow)
+		nm, cmd := ApplyEffect(m, eff)
+		return moduleKeyResult{nm, cmd}, true
+	}
+	// Number hotkeys 1..9 for direct action selection + execution.
+	if len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		if r >= '1' && r <= '9' {
+			idx := int(r - '1')
+			if idx < len(actions) {
+				m.actionSel = idx
+				ctx := m.moduleContextFor(m.detailsRow.PackageID)
+				eff := actions[idx].Run(ctx, *m.detailsRow)
+				nm, cmd := ApplyEffect(m, eff)
+				return moduleKeyResult{nm, cmd}, true
+			}
+		}
+	}
+	return moduleKeyResult{m, nil}, false
 }
 
 // runAction dispatches the selected action via its Execute closure. If
