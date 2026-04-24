@@ -24,17 +24,13 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Module path intercepts navigation + Enter when m.detailsRow is
-	// the active selection. Events-zone activation + favorite toggle
-	// are wired in later Cutover tasks (11, 12).
+	// the active selection.
 	if m.detailsRow != nil {
 		if out, handled := m.handleModuleDetailsKey(msg); handled {
 			return out.model, out.cmd
 		}
 	}
 
-	actions := ActionsFor(m.detailsResource.Type)
-	events := selectableEventRows(m)
-	hasSelectableEvents := len(events) > 0
 	switch msg.String() {
 	case "ctrl+p":
 		m.switcher = newSwitcher(m.awsCtx.Profile, m.awsCtx.Region)
@@ -61,72 +57,6 @@ func (m Model) updateDetails(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.eventSel = 0
 		m.detailsRow = nil
 		return m, nil
-	case "tab":
-		// Tab cycles focus between Actions and Events, but only when
-		// the Events zone has selectable rows.
-		if !hasSelectableEvents {
-			return m, nil
-		}
-		if m.detailsFocus == detailsFocusActions {
-			m.detailsFocus = detailsFocusEvents
-			if m.eventSel >= len(events) {
-				m.eventSel = 0
-			}
-		} else {
-			m.detailsFocus = detailsFocusActions
-		}
-		return m, nil
-	case "up":
-		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
-			if m.eventSel > 0 {
-				m.eventSel--
-			}
-			return m, nil
-		}
-		if m.actionSel > 0 {
-			m.actionSel--
-		}
-		return m, nil
-	case "down":
-		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
-			if m.eventSel < len(events)-1 {
-				m.eventSel++
-			}
-			return m, nil
-		}
-		if m.actionSel < len(actions)-1 {
-			m.actionSel++
-		}
-		return m, nil
-	case "enter":
-		if m.detailsFocus == detailsFocusEvents && hasSelectableEvents {
-			if m.eventSel >= len(events) {
-				return m, nil
-			}
-			row := events[m.eventSel]
-			activator, ok := eventActivationRegistry[m.detailsResource.Type]
-			if !ok {
-				m.toast = newToast("no activation handler for this resource type", 2*time.Second)
-				return m, nil
-			}
-			return activator(m, row.ActivationID)
-		}
-		return m.runAction(actions, m.actionSel)
-	case "f":
-		_, toast := m.toggleFavoriteForResource(m.detailsResource)
-		m.toast = toast
-		return m, nil
-	}
-	// Number hotkeys 1..9 for direct selection + execution.
-	if len(msg.Runes) == 1 {
-		r := msg.Runes[0]
-		if r >= '1' && r <= '9' {
-			idx := int(r - '1')
-			if idx < len(actions) {
-				m.actionSel = idx
-				return m.runAction(actions, idx)
-			}
-		}
 	}
 	return m, nil
 }
@@ -149,9 +79,9 @@ func (m Model) currentModuleEventActivations() []string {
 }
 
 // handleModuleDetailsKey handles navigation + Enter for a module-owned
-// Details view. Returns handled=false for keys the legacy path still
-// owns (ctrl+p, ctrl+c, esc, number hotkeys), so the caller continues
-// its own switch.
+// Details view. Returns handled=false for keys the generic fallback
+// path still owns (ctrl+p, ctrl+c, esc), so the caller continues its
+// own switch.
 func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 	mod, ok := m.moduleForID(m.detailsRow.PackageID)
 	if !ok {
@@ -241,20 +171,6 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 		}
 	}
 	return moduleKeyResult{m, nil}, false
-}
-
-// runAction dispatches the selected action via its Execute closure. If
-// Execute is nil (not yet implemented), it surfaces a toast to the user.
-func (m Model) runAction(actions []Action, idx int) (tea.Model, tea.Cmd) {
-	if idx < 0 || idx >= len(actions) {
-		return m, nil
-	}
-	a := actions[idx]
-	if a.Execute == nil {
-		m.toast = newToast("not yet implemented", 3*time.Second)
-		return m, nil
-	}
-	return a.Execute(m)
 }
 
 // toggleFavoriteForResource flips favorite state on the given resource,

@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/wmattei/scout/internal/awsctx"
-	"github.com/wmattei/scout/internal/awsctx/automation"
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
 	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/core"
@@ -138,14 +137,6 @@ type Model struct {
 	// handler when the AWS context swaps.
 	serviceScopeFetched map[string]struct{}
 
-	// Editor state for interactive actions (Lambda invoke, SSM update).
-	// pendingEditorAction identifies what to do after the editor closes;
-	// pendingEditorPath is the temp file the editor writes to;
-	// pendingEditorResource is the resource the editor was opened for.
-	pendingEditorAction   editorAction
-	pendingEditorPath     string
-	pendingEditorResource core.Resource
-
 	// Details keyboard focus. In modeDetails the focus toggles
 	// between the Actions zone (default) and the Events zone when
 	// it contains selectable rows (e.g. runbook execution history).
@@ -153,10 +144,6 @@ type Model struct {
 	// selectable-row list.
 	detailsFocus int
 	eventSel     int
-
-	// Execution-details mode state — populated when entering a
-	// runbook execution. See executionState for field docs.
-	exec executionState
 
 	// onboardingReason is the AWS-resolve error message shown on the
 	// onboarding screen. Only populated when the TUI is launched in
@@ -211,22 +198,6 @@ type Model struct {
 	moduleEventActivations *[]string
 }
 
-// executionState bundles every field that is only meaningful while the
-// TUI is in modeExecution. Consolidating the fields keeps the top-level
-// Model focused on search/details concerns and makes it obvious which
-// state to reset when leaving the mode.
-type executionState struct {
-	ID             string
-	Document       core.Resource
-	Data           *automation.ExecutionDetails
-	StepLogs       map[string][]string
-	StepSel        int
-	Error          string
-	PollEpoch      int // invalidates in-flight polls after Esc/mode switches
-	GraceRemaining int // extra ticks to poll after terminal for log catch-up
-	Viewport       viewport.Model
-}
-
 const (
 	detailsFocusActions = 0
 	detailsFocusEvents  = 1
@@ -246,24 +217,20 @@ func NewModel(
 	ti.CharLimit = 512
 
 	return Model{
-		memory:              memory,
-		db:                  db,
-		awsCtx:              awsCtx,
-		activity:            activity,
-		prefs:               prefsDB,
-		prefsState:          prefsState,
-		input:               ti,
-		width:               80,
-		height:              24,
-		mode:                modeSearch,
-		lazyDetails:         make(map[lazyDetailKey]map[string]string),
-		lazyDetailsState:    make(map[lazyDetailKey]lazyDetailState),
-		tailViewport:        viewport.New(80, 10),
-		exec: executionState{
-			Viewport: viewport.New(80, 10),
-			StepLogs: map[string][]string{},
-		},
-		serviceScopeFetched: make(map[string]struct{}),
+		memory:                 memory,
+		db:                     db,
+		awsCtx:                 awsCtx,
+		activity:               activity,
+		prefs:                  prefsDB,
+		prefsState:             prefsState,
+		input:                  ti,
+		width:                  80,
+		height:                 24,
+		mode:                   modeSearch,
+		lazyDetails:            make(map[lazyDetailKey]map[string]string),
+		lazyDetailsState:       make(map[lazyDetailKey]lazyDetailState),
+		tailViewport:           viewport.New(80, 10),
+		serviceScopeFetched:    make(map[string]struct{}),
 		detailsHitMap:          new([]clickRegion),
 		moduleState:            make(map[string]effect.State),
 		moduleLazy:             make(map[lazyDetailKey]map[string]string),

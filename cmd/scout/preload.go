@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/wmattei/scout/internal/awsctx"
-	"github.com/wmattei/scout/internal/awsctx/providers"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/debuglog"
 	"github.com/wmattei/scout/internal/index"
@@ -40,7 +39,6 @@ Service values:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			closeLog := debuglog.Init()
 			defer closeLog()
-			providers.RegisterAll()
 			return runPreload(args[0], awsctx.ListOptions{Limit: limit, Prefix: prefix})
 		},
 	}

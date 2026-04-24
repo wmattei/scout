@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/wmattei/scout/internal/awsctx"
-	"github.com/wmattei/scout/internal/awsctx/providers"
 	"github.com/wmattei/scout/internal/cache"
 	"github.com/wmattei/scout/internal/debuglog"
 	"github.com/wmattei/scout/internal/index"
@@ -34,7 +33,6 @@ func rootCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			closeLog := debuglog.Init()
 			defer closeLog()
-			providers.RegisterAll()
 			return runTUI()
 		},
 	}

@@ -67,9 +67,6 @@ func (m Model) View() string {
 		body = renderTailLogs(m, bodyHeight)
 	case modeSwitcher:
 		body = renderSwitcher(m.switcher, m.width, bodyHeight)
-	case modeExecutionDetails:
-		body = renderExecutionDetails(m, m.width, bodyHeight)
-		body = padBlock(body, bodyHeight)
 	case modeOnboarding:
 		body = renderOnboarding(m, m.width, bodyHeight)
 	default:

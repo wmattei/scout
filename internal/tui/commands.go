@@ -8,42 +8,9 @@ import (
 
 	"github.com/wmattei/scout/internal/awsctx"
 	awslogs "github.com/wmattei/scout/internal/awsctx/logs"
-	awss3 "github.com/wmattei/scout/internal/awsctx/s3"
-	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/index"
 	"github.com/wmattei/scout/internal/prefs"
-	"github.com/wmattei/scout/internal/search"
-	"github.com/wmattei/scout/internal/services"
 )
-
-// refreshServiceCmd fires a live fetch for a single resource type,
-// persists the result, and emits msgResourcesUpdated. Used by the
-// manual service-scope feature: the first time a session enters
-// "<alias>:", the TUI fires this to populate the in-memory index with
-// fresh data for just that type. The full top-level refresh used to
-// run on launch but was retired in favour of the explicit
-// `scout preload <service>` subcommand — every refresh now
-// either user-typed (a service scope) or user-invoked (the
-// subcommand).
-func refreshServiceCmd(ac *awsctx.Context, db *index.DB, mem *index.Memory, t core.ResourceType) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-
-		p, ok := services.Get(t)
-		if !ok {
-			return msgResourcesUpdated{}
-		}
-		rs, err := p.ListAll(ctx, ac, awsctx.ListOptions{})
-		if err != nil {
-			return msgResourcesUpdated{errors: []string{err.Error()}}
-		}
-		if err := index.Persist(ctx, db, mem, t, rs); err != nil {
-			return msgResourcesUpdated{errors: []string{err.Error()}}
-		}
-		return msgResourcesUpdated{}
-	}
-}
 
 // resolveAccountCmd calls sts:GetCallerIdentity once and reports the account
 // ID (or a blank on error) to the TUI.
@@ -53,105 +20,6 @@ func resolveAccountCmd(ac *awsctx.Context) tea.Cmd {
 		defer cancel()
 		acct, _ := ac.CallerIdentity(ctx)
 		return msgAccount{account: acct}
-	}
-}
-
-// scopedSearchCmd runs the scoped (bucket/prefix) search behind modeSearch
-// when the input contains a `/`. It reads the SQLite cache for first
-// paint, fires a live ListObjectsV2 in parallel, persists every live
-// result to bucket_contents, merges cache + live into a single slice, and
-// returns the whole thing via msgScopedResults.
-//
-// The merge rule: live results win per (bucket, key) because they are
-// authoritative for size/mtime. Results are ordered by the search.Prefix
-// helper to match the TUI's display expectations.
-func scopedSearchCmd(ac *awsctx.Context, db *index.DB, query string) tea.Cmd {
-	return func() tea.Msg {
-		scope := search.ParseScope(query)
-		if scope.Bucket == "" {
-			return msgScopedResults{query: query, results: nil}
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		// 1. Cache read — fast, authoritative for first paint.
-		cached, _ := db.QueryBucketContents(ctx, scope.Bucket, scope.Prefix)
-
-		// 2. Live ListObjectsV2 at the narrowest prefix S3 can filter on.
-		// Concatenating Prefix+Leaf lets S3 do the filtering server-side
-		// (so typing narrows each request) and capping at
-		// MaxDisplayedResults keeps first-paint latency flat even for
-		// buckets with millions of keys.
-		livePrefix := scope.Prefix + scope.Leaf
-		live, err := awss3.ListAtPrefix(ctx, ac, scope.Bucket, livePrefix, MaxDisplayedResults)
-		if err != nil {
-			// On live failure, return whatever was in the cache so the
-			// UI still shows something and forward the error text so
-			// the Update handler can pop a toast.
-			return msgScopedResults{
-				query:   query,
-				results: search.Prefix(scope.Leaf, cached, MaxDisplayedResults),
-				err:     "scoped search failed: " + err.Error(),
-			}
-		}
-
-		// 3. Persist the live results opportunistically.
-		_ = db.UpsertBucketContents(ctx, scope.Bucket, live)
-
-		// 4. Merge: live keys overwrite cache keys, then prefix-match
-		//    against the leaf in a single pass.
-		merged := mergeByKey(cached, live)
-		results := search.Prefix(scope.Leaf, merged, MaxDisplayedResults)
-		return msgScopedResults{query: query, results: results}
-	}
-}
-
-// mergeByKey merges two resource slices, preferring entries from `b` when
-// both slices contain the same Key. Returns a new slice; inputs are not
-// mutated.
-func mergeByKey(a, b []core.Resource) []core.Resource {
-	byKey := make(map[string]int, len(a)+len(b))
-	out := make([]core.Resource, 0, len(a)+len(b))
-	for _, r := range a {
-		byKey[r.Key] = len(out)
-		out = append(out, r)
-	}
-	for _, r := range b {
-		if i, ok := byKey[r.Key]; ok {
-			out[i] = r
-			continue
-		}
-		byKey[r.Key] = len(out)
-		out = append(out, r)
-	}
-	return out
-}
-
-// msgLazyDetailsResolved carries the result of a generic lazy-detail
-// resolution started from the Enter handler. The handler stores the
-// returned map in m.lazyDetails keyed by msg.key.
-type msgLazyDetailsResolved struct {
-	key     lazyDetailKey
-	details map[string]string
-	err     error
-}
-
-// resolveLazyDetailsCmd dispatches a provider's ResolveDetails as a
-// tea.Cmd. The caller is responsible for marking
-// m.lazyDetailsState[key] = lazyStateInFlight before returning this
-// command from Update — the message handler flips it to
-// lazyStateResolved on completion.
-func resolveLazyDetailsCmd(ac *awsctx.Context, p services.Provider, r core.Resource) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		details, err := p.ResolveDetails(ctx, ac, r)
-		return msgLazyDetailsResolved{
-			key:     lazyDetailKey{Type: r.Type, Key: r.Key},
-			details: details,
-			err:     err,
-		}
 	}
 }
 
