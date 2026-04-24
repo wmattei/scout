@@ -60,7 +60,14 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(visible) == 0 || m.selected < 0 || m.selected >= len(visible) {
 			return m, nil
 		}
-		_, toast := m.toggleFavoriteForResource(visible[m.selected].Resource)
+		picked := visible[m.selected]
+		var target core.Resource
+		if picked.ModuleRow != nil {
+			target = resourceFromRow(*picked.ModuleRow)
+		} else {
+			target = picked.Resource
+		}
+		_, toast := m.toggleFavoriteForResource(target)
 		m.toast = toast
 		return m, nil
 	}
