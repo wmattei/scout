@@ -2,11 +2,14 @@ package tui
 
 import (
 	"context"
-	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/wmattei/scout/internal/awsctx"
 	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/effect"
 	"github.com/wmattei/scout/internal/module"
@@ -84,7 +87,7 @@ func (h *modelHost) EnterTailLogs(logGroup string) {
 	h.m.tailLines = nil
 	h.m.tailFilter = ""
 	h.m.tailFilterEditing = false
-	h.deferred = append(h.deferred, startTailLogsEffectCmd(h.m.awsCtx, logGroup))
+	h.deferred = append(h.deferred, startTailLogsEffectCmd(h.m.awsCtx, logGroup, h.m.account))
 }
 
 func (h *modelHost) SetModuleState(packageID string, state effect.State) {
@@ -160,15 +163,12 @@ func asyncRunner(h *modelHost) effect.AsyncRunner {
 }
 
 // editorOpener returns an EditorOpener bound to the given host.
-// Opens $EDITOR via tea.ExecProcess through the existing openEditorCmd
-// helper; on save, OnSave is called and its returned Effect is queued.
+// Opens $EDITOR via tea.ExecProcess; on exit, reads the temp file and
+// invokes OnSave, whose returned Effect is reduced via msgEffectDone.
 func editorOpener(h *modelHost) effect.EditorOpener {
 	return func(prefill []byte, onSave func(content []byte) effect.Effect) {
 		h.m.pendingEditorEffectOnSave = onSave
-		cmd := openEditorWithPrefillCmd(prefill, func(content []byte) tea.Msg {
-			return msgEffectDone{next: onSave(content)}
-		})
-		h.deferred = append(h.deferred, cmd)
+		h.deferred = append(h.deferred, openEditorWithPrefillCmd(prefill, onSave))
 	}
 }
 
@@ -189,17 +189,69 @@ func (m Model) handleEffectDone(msg msgEffectDone) (Model, tea.Cmd) {
 	return nm, cmd
 }
 
-// Placeholders — these helpers get their real bodies as Phase 2
-// migrates modules that need them. Fail loudly if called prematurely.
-func startTailLogsEffectCmd(ac interface{}, group string) tea.Cmd {
-	_ = ac
-	return func() tea.Msg {
-		return msgEffectDone{next: effect.Toast{Message: fmt.Sprintf("tail stub: %s", group), Level: effect.LevelWarning}}
-	}
+// startTailLogsEffectCmd delegates to the existing tailLogsStartCmd
+// helper used by the legacy action_tail.go path. The resulting
+// msgTailStarted / msgTailEvent flow through handleTailStarted /
+// handleTailEvent in update_messages.go, which seed m.tailStream,
+// m.tailLines, and the viewport — no module-specific plumbing needed.
+func startTailLogsEffectCmd(ac *awsctx.Context, group, account string) tea.Cmd {
+	return tailLogsStartCmd(ac, group, account)
 }
 
-func openEditorWithPrefillCmd(prefill []byte, onClose func(content []byte) tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		return onClose(prefill)
+// openEditorWithPrefillCmd writes prefill to a temp file, suspends the
+// TUI via tea.ExecProcess while $EDITOR runs, and on editor exit reads
+// the file back, hands the content to onSave, and emits
+// msgEffectDone with the returned Effect. Errors along the way become
+// error toasts via the same msgEffectDone channel so the reducer path
+// handles them uniformly.
+func openEditorWithPrefillCmd(prefill []byte, onSave func([]byte) effect.Effect) tea.Cmd {
+	path, err := writeTempFile(prefill)
+	if err != nil {
+		return func() tea.Msg {
+			return msgEffectDone{next: effect.Toast{
+				Message: "editor temp file failed: " + err.Error(),
+				Level:   effect.LevelError,
+			}}
+		}
 	}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		switch runtime.GOOS {
+		case "windows":
+			editor = "notepad"
+		default:
+			editor = "vi"
+		}
+	}
+	c := exec.Command(editor, path)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		defer os.Remove(path)
+		if err != nil {
+			return msgEffectDone{next: effect.Toast{
+				Message: "editor failed: " + err.Error(),
+				Level:   effect.LevelError,
+			}}
+		}
+		content, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return msgEffectDone{next: effect.Toast{
+				Message: "read after editor failed: " + rerr.Error(),
+				Level:   effect.LevelError,
+			}}
+		}
+		return msgEffectDone{next: onSave(content)}
+	})
+}
+
+func writeTempFile(body []byte) (string, error) {
+	f, err := os.CreateTemp("", "scout-edit-*")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.Write(body); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
