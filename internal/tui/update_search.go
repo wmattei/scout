@@ -300,6 +300,9 @@ func (m Model) enterModuleDetails(r core.Row) (tea.Model, tea.Cmd) {
 	m.detailsResource = core.Resource{}
 	m.actionSel = 0
 	m.mode = modeDetails
+	if m.prefs != nil {
+		_ = m.prefs.MarkVisited(m.prefsState, resourceFromRow(r))
+	}
 
 	key := moduleDetailKey(r.PackageID, r.Key)
 	_, haveLazy := m.moduleLazy[key]

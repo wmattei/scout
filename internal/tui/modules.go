@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/wmattei/scout/internal/core"
 	"github.com/wmattei/scout/internal/module"
 )
 
@@ -22,6 +23,21 @@ func (m Model) moduleForID(id string) (module.Module, bool) {
 		return nil, false
 	}
 	return m.registry.Get(id)
+}
+
+// resourceFromRow synthesises the core.Resource shape prefs
+// understands for a module-owned row. Phase-3 reshapes the prefs
+// tables to (packageID, key) tuples and this synthesis goes away.
+//
+// Type stays at the zero value (ResourceType(0)) — the key carries
+// the PackageID prefix so collisions across modules can't happen.
+func resourceFromRow(r core.Row) core.Resource {
+	return core.Resource{
+		Type:        core.ResourceType(0),
+		Key:         r.PackageID + ":" + r.Key,
+		DisplayName: r.Name,
+		Meta:        r.Meta,
+	}
 }
 
 // scopeFromInput returns (scope, rest, true) when the input is of the

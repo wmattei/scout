@@ -85,7 +85,16 @@ func renderResults(results []search.Result, selected, width, height int, emptyMs
 			nameBudget = 4
 		}
 		starPrefix := ""
-		if r.ModuleRow == nil && favs != nil && favs.IsFavorite(r.Resource.Type, r.Resource.Key) {
+		isFav := false
+		if favs != nil {
+			if r.ModuleRow != nil {
+				syn := resourceFromRow(*r.ModuleRow)
+				isFav = favs.IsFavorite(syn.Type, syn.Key)
+			} else {
+				isFav = favs.IsFavorite(r.Resource.Type, r.Resource.Key)
+			}
+		}
+		if isFav {
 			starPrefix = "★ "
 			nameBudget -= lipgloss.Width(starPrefix)
 			if nameBudget < 4 {

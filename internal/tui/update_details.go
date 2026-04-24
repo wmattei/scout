@@ -156,6 +156,18 @@ func (m Model) handleModuleDetailsKey(msg tea.KeyMsg) (moduleKeyResult, bool) {
 		eff := actions[m.actionSel].Run(ctx, *m.detailsRow)
 		nm, cmd := ApplyEffect(m, eff)
 		return moduleKeyResult{nm, cmd}, true
+	case "f":
+		if m.prefs != nil {
+			res := resourceFromRow(*m.detailsRow)
+			if m.prefsState != nil && m.prefsState.IsFavorite(res.Type, res.Key) {
+				_ = m.prefs.UnsetFavorite(m.prefsState, res.Type, res.Key)
+				m.toast = newToast("unfavorited", 2*time.Second)
+			} else {
+				_ = m.prefs.SetFavorite(m.prefsState, res)
+				m.toast = newToast("favorited", 2*time.Second)
+			}
+		}
+		return moduleKeyResult{m, nil}, true
 	}
 	// Number hotkeys 1..9 for direct action selection + execution.
 	if len(msg.Runes) == 1 {
